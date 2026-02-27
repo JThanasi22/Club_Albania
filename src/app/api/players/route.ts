@@ -15,7 +15,7 @@ export async function GET() {
     return NextResponse.json(players);
   } catch (error) {
     console.error('Error fetching players:', error);
-    return NextResponse.json({ error: 'Failed to fetch players' }, { status: 500 });
+    return NextResponse.json({ error: 'Marrja e lojtarëve dështoi' }, { status: 500 });
   }
 }
 
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     const { name, email, phone, position, jerseyNumber, photo, joinDate, active } = body;
 
     if (!name) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Emri është i detyrueshëm' }, { status: 400 });
     }
 
     const player = await db.player.create({
@@ -45,6 +45,6 @@ export async function POST(request: Request) {
     return NextResponse.json(player, { status: 201 });
   } catch (error) {
     console.error('Error creating player:', error);
-    return NextResponse.json({ error: 'Failed to create player' }, { status: 500 });
+    return NextResponse.json({ error: 'Krijimi i lojtarit dështoi' }, { status: 500 });
   }
 }

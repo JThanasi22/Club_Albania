@@ -16,13 +16,13 @@ export async function GET(
     });
 
     if (!payment) {
-      return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Pagesa nuk u gjet' }, { status: 404 });
     }
 
     return NextResponse.json(payment);
   } catch (error) {
     console.error('Error fetching payment:', error);
-    return NextResponse.json({ error: 'Failed to fetch payment' }, { status: 500 });
+    return NextResponse.json({ error: 'Marrja e pagesës dështoi' }, { status: 500 });
   }
 }
 
@@ -54,7 +54,7 @@ export async function PUT(
     return NextResponse.json(payment);
   } catch (error) {
     console.error('Error updating payment:', error);
-    return NextResponse.json({ error: 'Failed to update payment' }, { status: 500 });
+    return NextResponse.json({ error: 'Përditësimi i pagesës dështoi' }, { status: 500 });
   }
 }
 
@@ -70,9 +70,9 @@ export async function DELETE(
       where: { id },
     });
 
-    return NextResponse.json({ message: 'Payment deleted successfully' });
+    return NextResponse.json({ message: 'Pagesa u fshi me sukses' });
   } catch (error) {
     console.error('Error deleting payment:', error);
-    return NextResponse.json({ error: 'Failed to delete payment' }, { status: 500 });
+    return NextResponse.json({ error: 'Fshirja e pagesës dështoi' }, { status: 500 });
   }
 }

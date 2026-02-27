@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     const { username, password } = body;
 
     if (!username || !password) {
-      return NextResponse.json({ error: 'Username and password are required' }, { status: 400 });
+      return NextResponse.json({ error: 'Përdoruesi dhe fjalëkalimi janë të detyrueshëm' }, { status: 400 });
     }
 
     // Find admin user
@@ -18,14 +18,14 @@ export async function POST(request: Request) {
     });
 
     if (!admin) {
-      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+      return NextResponse.json({ error: 'Kredencialet janë të gabuara' }, { status: 401 });
     }
 
     // Verify password with bcrypt
     const isValid = await verifyPassword(password, admin.password);
 
     if (!isValid) {
-      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+      return NextResponse.json({ error: 'Kredencialet janë të gabuara' }, { status: 401 });
     }
 
     // Set session cookie
@@ -51,6 +51,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error('Login error:', error);
-    return NextResponse.json({ error: 'Login failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Hyrja dështoi' }, { status: 500 });
   }
 }

@@ -14,6 +14,7 @@ import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { AnimatedText } from '@/components/AnimatedText';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Users, TrendingUp, Calendar, Plus, Pencil, Trash2,
   CheckCircle, Clock, AlertCircle, UserPlus, CreditCard, Search,
@@ -126,6 +127,24 @@ export default function VolleyballTeamManager() {
   // Photo state
   const [playerPhoto, setPlayerPhoto] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+    variant: 'default' | 'destructive';
+  }>({ open: false, title: '', description: '', onConfirm: () => {}, variant: 'default' });
+
+  const showConfirmDialog = (
+    title: string,
+    description: string,
+    onConfirm: () => void,
+    variant: 'default' | 'destructive' = 'default'
+  ) => {
+    setConfirmDialog({ open: true, title, description, onConfirm, variant });
+  };
 
   // Player form
   const [playerForm, setPlayerForm] = useState({
@@ -339,16 +358,22 @@ export default function VolleyballTeamManager() {
   };
 
   const handleDeletePlayer = async (id: string) => {
-    if (!confirm('A jeni të sigurt që doni të fshini këtë lojtar? Të gjitha pagesat e tij do të fshiren gjithashtu.')) return;
-    try {
-      const res = await fetch(`/api/players/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete player');
-      toast.success('Lojtari u fshi me sukses');
-      fetchPlayers();
-      fetchStats();
-    } catch {
-      toast.error('Fshirja e lojtarit dështoi');
-    }
+    showConfirmDialog(
+      'Fshi Lojtarin',
+      'A jeni të sigurt që doni të fshini këtë lojtar? Të gjitha pagesat e tij do të fshihen gjithashtu.',
+      async () => {
+        try {
+          const res = await fetch(`/api/players/${id}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Failed to delete player');
+          toast.success('Lojtari u fshi me sukses');
+          fetchPlayers();
+          fetchStats();
+        } catch {
+          toast.error('Fshirja e lojtarit dështoi');
+        }
+      },
+      'destructive'
+    );
   };
 
   // Payment CRUD operations
@@ -419,16 +444,22 @@ export default function VolleyballTeamManager() {
   };
 
   const handleDeletePayment = async (id: string) => {
-    if (!confirm('A jeni të sigurt që doni të fshini këtë pagesë?')) return;
-    try {
-      const res = await fetch(`/api/payments/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete payment');
-      toast.success('Pagesa u fshi me sukses');
-      fetchPayments();
-      fetchStats();
-    } catch {
-      toast.error('Fshirja e pagesës dështoi');
-    }
+    showConfirmDialog(
+      'Fshi Pagesën',
+      'A jeni të sigurt që doni të fshini këtë pagesë?',
+      async () => {
+        try {
+          const res = await fetch(`/api/payments/${id}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Failed to delete payment');
+          toast.success('Pagesa u fshi me sukses');
+          fetchPayments();
+          fetchStats();
+        } catch {
+          toast.error('Fshirja e pagesës dështoi');
+        }
+      },
+      'destructive'
+    );
   };
 
   // Mark payment as paid
@@ -1716,6 +1747,16 @@ export default function VolleyballTeamManager() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        onConfirm={confirmDialog.onConfirm}
+        variant={confirmDialog.variant}
+      />
 
       {/* Footer */}
       <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-auto">

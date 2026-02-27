@@ -20,7 +20,7 @@ export async function POST() {
         });
 
         if (monthlyPayments.length === 0) {
-            return NextResponse.json({ message: 'No monthly plans found', created: 0 });
+            return NextResponse.json({ message: 'Nuk u gjetën planera mujore', created: 0 });
         }
 
         // Group by planId to get plan metadata
@@ -91,16 +91,16 @@ export async function POST() {
         }
 
         if (toCreate.length === 0) {
-            return NextResponse.json({ message: 'No invoices due at this time', created: 0 });
+            return NextResponse.json({ message: 'Nuk ka fatura të dakshme në këtë kohë', created: 0 });
         }
 
         const result = await db.payment.createMany({ data: toCreate });
         return NextResponse.json({
-            message: `Created ${result.count} invoice(s)`,
+            message: `U krijuan ${result.count} fatura`,
             created: result.count,
         });
     } catch (error) {
         console.error('Error generating due invoices:', error);
-        return NextResponse.json({ error: 'Failed to generate due invoices' }, { status: 500 });
+        return NextResponse.json({ error: 'Gjenerimi i faturave dështoi' }, { status: 500 });
     }
 }

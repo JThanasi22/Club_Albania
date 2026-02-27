@@ -9,7 +9,7 @@ export async function POST() {
     
     if (existingAdmin) {
       return NextResponse.json({ 
-        message: 'Admin already exists',
+        message: 'Admin ekziston tashmë',
         admin: { username: existingAdmin.username }
       });
     }
@@ -27,12 +27,12 @@ export async function POST() {
     });
 
     return NextResponse.json({ 
-      message: 'Default admin created',
+      message: 'Admin i paracaktuar u krijua',
       admin: { username: admin.username },
       defaultPassword: 'admin123',
     });
   } catch (error) {
     console.error('Seed error:', error);
-    return NextResponse.json({ error: 'Failed to create admin' }, { status: 500 });
+    return NextResponse.json({ error: 'Krijimi i adminit dështoi' }, { status: 500 });
   }
 }
