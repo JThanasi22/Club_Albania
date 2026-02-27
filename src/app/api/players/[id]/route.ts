@@ -21,13 +21,13 @@ export async function GET(
     });
 
     if (!player) {
-      return NextResponse.json({ error: 'Player not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Lojtari nuk u gjet' }, { status: 404 });
     }
 
     return NextResponse.json(player);
   } catch (error) {
     console.error('Error fetching player:', error);
-    return NextResponse.json({ error: 'Failed to fetch player' }, { status: 500 });
+    return NextResponse.json({ error: 'Marrja e lojtarit dështoi' }, { status: 500 });
   }
 }
 
@@ -58,7 +58,7 @@ export async function PUT(
     return NextResponse.json(player);
   } catch (error) {
     console.error('Error updating player:', error);
-    return NextResponse.json({ error: 'Failed to update player' }, { status: 500 });
+    return NextResponse.json({ error: 'Përditësimi i lojtarit dështoi' }, { status: 500 });
   }
 }
 
@@ -73,9 +73,9 @@ export async function DELETE(
       where: { id },
     });
 
-    return NextResponse.json({ message: 'Player deleted successfully' });
+    return NextResponse.json({ message: 'Lojtari u fshi me sukses' });
   } catch (error) {
     console.error('Error deleting player:', error);
-    return NextResponse.json({ error: 'Failed to delete player' }, { status: 500 });
+    return NextResponse.json({ error: 'Fshirja e lojtarit dështoi' }, { status: 500 });
   }
 }

@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     
     // Simple protection - in production use a proper API key
     if (secret !== 'club-albania-migrate-2024') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'E paautorizuar' }, { status: 401 });
     }
 
     const admins = await db.admin.findMany();
@@ -39,11 +39,11 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ 
-      message: 'Password migration complete',
+      message: 'Migrimi i fjalëkalimeve u përfundua',
       results,
     });
   } catch (error) {
     console.error('Migration error:', error);
-    return NextResponse.json({ error: 'Migration failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Migrimi dështoi' }, { status: 500 });
   }
 }

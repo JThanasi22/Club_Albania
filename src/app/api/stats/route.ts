@@ -87,6 +87,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Error fetching stats:', error);
-    return NextResponse.json({ error: 'Failed to fetch stats' }, { status: 500 });
+    return NextResponse.json({ error: 'Marrja e statistikave dështoi' }, { status: 500 });
   }
 }
