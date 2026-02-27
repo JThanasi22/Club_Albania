@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { hashPassword } from '@/lib/password';
 
 // This route creates a default admin user if none exists
 export async function POST() {
@@ -13,11 +14,14 @@ export async function POST() {
       });
     }
 
-    // Create default admin
+    // Hash the default password with salt
+    const hashedPassword = await hashPassword('admin123');
+
+    // Create default admin with hashed password
     const admin = await db.admin.create({
       data: {
         username: 'admin',
-        password: 'admin123', // Default password - should be changed
+        password: hashedPassword,
         name: 'Administrator',
       },
     });
