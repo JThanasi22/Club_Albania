@@ -1,0 +1,51 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Player {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  email        String?
+  phone        String?
+  position     String?   // e.g., "Setter", "Outside Hitter", "Middle Blocker", "Libero"
+  jerseyNumber Int?
+  photo        String?   // Base64 encoded image
+  joinDate     DateTime  @default(now())
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  payments     Payment[]
+}
+
+model Payment {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  playerId  String    @db.ObjectId
+  player    Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  month     Int       // 1-12
+  year      Int       // e.g., 2024
+  amount    Float     // Payment amount
+  status    String    @default("pending") // "paid", "pending", "overdue"
+  paidDate  DateTime?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([playerId, month, year]) // One payment per player per month
+}
+
+model Admin {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  username  String   @unique
+  password  String   // In production, this should be hashed
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
