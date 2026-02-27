@@ -26,19 +26,25 @@ model Player {
 }
 
 model Payment {
-  id        String    @id @default(auto()) @map("_id") @db.ObjectId
-  playerId  String    @db.ObjectId
-  player    Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  month     Int       // 1-12
-  year      Int       // e.g., 2024
-  amount    Float     // Payment amount
-  status    String    @default("pending") // "paid", "pending", "overdue"
-  paidDate  DateTime?
-  notes     String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@unique([playerId, month, year]) // One payment per player per month
+  id                 String    @id @default(auto()) @map("_id") @db.ObjectId
+  playerId           String    @db.ObjectId
+  player             Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  month              Int       // 1-12
+  year               Int       // e.g., 2024
+  amount             Float     // Payment amount (per invoice)
+  status             String    @default("pending") // "paid", "pending", "overdue"
+  paidDate           DateTime?
+  notes              String?
+  // Payment plan fields
+  paymentType        String    @default("monthly") // "monthly" | "installment"
+  planId             String?   // groups all invoices of the same plan
+  planStartDate      DateTime? // start date of the plan
+  planEndDate        DateTime? // end date of the plan
+  dueDate            DateTime? // when this specific invoice is due
+  installmentNumber  Int?      // which installment this is (1-based)
+  totalInstallments  Int?      // total installments in the plan
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 }
 
 model Admin {
