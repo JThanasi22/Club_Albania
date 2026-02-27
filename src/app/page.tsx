@@ -12,8 +12,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { 
-  Users, TrendingUp, Calendar, Plus, Pencil, Trash2, 
+import {
+  Users, TrendingUp, Calendar, Plus, Pencil, Trash2,
   CheckCircle, Clock, AlertCircle, UserPlus, CreditCard, Search,
   Volleyball, Eye, LogOut, Lock, Loader2, Camera, X
 } from 'lucide-react';
@@ -42,6 +42,13 @@ interface Payment {
   status: string;
   paidDate: string | null;
   notes: string | null;
+  paymentType?: string;
+  planId?: string | null;
+  planStartDate?: string | null;
+  planEndDate?: string | null;
+  dueDate?: string | null;
+  installmentNumber?: number | null;
+  totalInstallments?: number | null;
 }
 
 interface Stats {
@@ -94,30 +101,30 @@ export default function VolleyballTeamManager() {
   const [admin, setAdmin] = useState<AdminUser | null>(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginLoading, setLoginLoading] = useState(false);
-  
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [stats, setStats] = useState<Stats | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [payments, setPayments] = useState<(Payment & { player: Player })[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Form states
   const [playerDialogOpen, setPlayerDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
   const [viewingPlayer, setViewingPlayer] = useState<Player | null>(null);
-  
+
   // Filter states
   const [paymentMonthFilter, setPaymentMonthFilter] = useState<string>('all');
   const [paymentYearFilter, setPaymentYearFilter] = useState<string>(new Date().getFullYear().toString());
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('all');
   const [playerSearch, setPlayerSearch] = useState('');
-  
+
   // Photo state
   const [playerPhoto, setPlayerPhoto] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Player form
   const [playerForm, setPlayerForm] = useState({
     name: '',
@@ -128,15 +135,21 @@ export default function VolleyballTeamManager() {
     joinDate: new Date().toISOString().split('T')[0],
     active: true,
   });
-  
+
   // Payment form
   const [paymentForm, setPaymentForm] = useState({
     playerId: '',
+    paymentType: 'monthly',
+    totalAmount: '5000',
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: '',
+    installments: '3',
+    status: 'pending',
+    notes: '',
+    // Legacy fields for edit mode
     month: (new Date().getMonth() + 1).toString(),
     year: new Date().getFullYear().toString(),
     amount: '5000',
-    status: 'pending',
-    notes: '',
   });
 
   // Check authentication on mount
@@ -167,7 +180,7 @@ export default function VolleyballTeamManager() {
         body: JSON.stringify(loginForm),
       });
       const data = await res.json();
-      
+
       if (data.success) {
         setAuthenticated(true);
         setAdmin(data.admin);
@@ -226,7 +239,7 @@ export default function VolleyballTeamManager() {
       if (paymentMonthFilter !== 'all') params.append('month', paymentMonthFilter);
       if (paymentYearFilter !== 'all') params.append('year', paymentYearFilter);
       if (paymentStatusFilter !== 'all') params.append('status', paymentStatusFilter);
-      
+
       const res = await fetch(`/api/payments?${params.toString()}`);
       const data = await res.json();
       if (Array.isArray(data)) {
@@ -265,7 +278,7 @@ export default function VolleyballTeamManager() {
         toast.error('Fotoja nuk duhet të jetë më e madhe se 2MB');
         return;
       }
-      
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setPlayerPhoto(reader.result as string);
@@ -306,9 +319,9 @@ export default function VolleyballTeamManager() {
       const res = await fetch(`/api/players/${editingPlayer.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          ...playerForm, 
-          photo: playerPhoto !== undefined ? playerPhoto : editingPlayer.photo 
+        body: JSON.stringify({
+          ...playerForm,
+          photo: playerPhoto !== undefined ? playerPhoto : editingPlayer.photo
         }),
       });
       if (!res.ok) throw new Error('Failed to update player');
@@ -339,14 +352,40 @@ export default function VolleyballTeamManager() {
   // Payment CRUD operations
   const handleCreatePayment = async () => {
     try {
+      const payload = editingPayment
+        ? {
+          month: paymentForm.month,
+          year: paymentForm.year,
+          amount: paymentForm.amount,
+          status: paymentForm.status,
+          notes: paymentForm.notes,
+        }
+        : {
+          playerId: paymentForm.playerId,
+          paymentType: paymentForm.paymentType,
+          totalAmount: paymentForm.totalAmount,
+          startDate: paymentForm.startDate,
+          endDate: paymentForm.endDate,
+          installments: paymentForm.installments,
+          status: paymentForm.status,
+          notes: paymentForm.notes,
+        };
+
       const res = await fetch('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(paymentForm),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create payment');
-      toast.success('Pagesa u shtua me sukses');
+
+      const count = data.count ?? 1;
+      const totalPlanned = data.totalPlanned;
+      if (totalPlanned && totalPlanned > 1) {
+        toast.success(`Plani u krijua: fatura e parë u shtua (${totalPlanned} fatura gjithsej)`);
+      } else {
+        toast.success(`${count} faturë u shtua me sukses`);
+      }
       setPaymentDialogOpen(false);
       resetPaymentForm();
       fetchPayments();
@@ -427,11 +466,16 @@ export default function VolleyballTeamManager() {
   const resetPaymentForm = () => {
     setPaymentForm({
       playerId: '',
+      paymentType: 'monthly',
+      totalAmount: '5000',
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: '',
+      installments: '3',
+      status: 'pending',
+      notes: '',
       month: (new Date().getMonth() + 1).toString(),
       year: new Date().getFullYear().toString(),
       amount: '5000',
-      status: 'pending',
-      notes: '',
     });
   };
 
@@ -455,17 +499,26 @@ export default function VolleyballTeamManager() {
     setEditingPayment(payment);
     setPaymentForm({
       playerId: payment.playerId,
+      paymentType: payment.paymentType || 'monthly',
+      totalAmount: payment.amount.toString(),
+      startDate: payment.dueDate
+        ? new Date(payment.dueDate).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0],
+      endDate: payment.planEndDate
+        ? new Date(payment.planEndDate).toISOString().split('T')[0]
+        : '',
+      installments: payment.totalInstallments?.toString() || '3',
+      status: payment.status,
+      notes: payment.notes || '',
       month: payment.month.toString(),
       year: payment.year.toString(),
       amount: payment.amount.toString(),
-      status: payment.status,
-      notes: payment.notes || '',
     });
     setPaymentDialogOpen(true);
   };
 
   // Filter players
-  const filteredPlayers = (players || []).filter(player => 
+  const filteredPlayers = (players || []).filter(player =>
     player?.name?.toLowerCase().includes(playerSearch.toLowerCase()) ||
     player?.email?.toLowerCase().includes(playerSearch.toLowerCase()) ||
     player?.position?.toLowerCase().includes(playerSearch.toLowerCase())
@@ -496,17 +549,17 @@ export default function VolleyballTeamManager() {
       md: 'w-10 h-10 text-base',
       lg: 'w-16 h-16 text-2xl'
     };
-    
+
     if (player.photo) {
       return (
-        <img 
-          src={player.photo} 
+        <img
+          src={player.photo}
           alt={player.name}
           className={`${sizeClasses[size]} rounded-full object-cover`}
         />
       );
     }
-    
+
     return (
       <div className={`${sizeClasses[size]} bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center`}>
         <span className={`font-semibold text-orange-600 dark:text-orange-400`}>
@@ -537,7 +590,7 @@ export default function VolleyballTeamManager() {
             <div className="mx-auto mb-4 w-16 h-16 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center">
               <Volleyball className="w-10 h-10 text-orange-500" />
             </div>
-            <CardTitle className="text-2xl">Menaxheri i Ekipit të Volejbollit</CardTitle>
+            <CardTitle className="text-2xl">Club Albania Manager Portal</CardTitle>
             <CardDescription>Hyni për të menaxhuar ekipin tuaj</CardDescription>
           </CardHeader>
           <CardContent>
@@ -583,13 +636,6 @@ export default function VolleyballTeamManager() {
                 )}
               </Button>
             </form>
-            <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-              <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
-                <strong>Kredencialet e paracaktuara:</strong><br />
-                Përdoruesi: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">admin</code><br />
-                Fjalëkalimi: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">admin123</code>
-              </p>
-            </div>
           </CardContent>
         </Card>
       </div>
@@ -616,7 +662,7 @@ export default function VolleyballTeamManager() {
             <div className="flex items-center gap-3">
               <Volleyball className="w-10 h-10 text-orange-500" />
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Menaxheri i Ekipit të Volejbollit</h1>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Club Albania Manager Portal</h1>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Mirë se vini, {admin?.name || admin?.username}</p>
               </div>
             </div>
@@ -805,9 +851,9 @@ export default function VolleyballTeamManager() {
                               setPaymentForm({
                                 ...paymentForm,
                                 playerId: player.id,
-                                month: (new Date().getMonth() + 1).toString(),
-                                year: new Date().getFullYear().toString(),
+                                startDate: new Date().toISOString().split('T')[0],
                               });
+                              setEditingPayment(null);
                               setPaymentDialogOpen(true);
                             }}
                           >
@@ -982,6 +1028,24 @@ export default function VolleyballTeamManager() {
                       <Plus className="w-4 h-4 mr-2" />
                       Shto Pagesë
                     </Button>
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/payments/generate-due', { method: 'POST' });
+                          const data = await res.json();
+                          if (!res.ok) throw new Error(data.error);
+                          toast.success(data.message || 'Faturat u gjeneruan');
+                          fetchPayments();
+                          fetchStats();
+                        } catch {
+                          toast.error('Gjenerimi i faturave dështoi');
+                        }
+                      }}
+                    >
+                      <Calendar className="w-4 h-4 mr-2" />
+                      Gjeneroni Faturat
+                    </Button>
                   </div>
                 </div>
               </CardHeader>
@@ -1002,9 +1066,10 @@ export default function VolleyballTeamManager() {
                         <TableRow>
                           <TableHead>Lojtari</TableHead>
                           <TableHead>Periudha</TableHead>
+                          <TableHead>Lloji</TableHead>
                           <TableHead>Shuma</TableHead>
                           <TableHead>Statusi</TableHead>
-                          <TableHead>Data e Pagesës</TableHead>
+                          <TableHead>Afati</TableHead>
                           <TableHead className="text-right">Veprimet</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1018,10 +1083,33 @@ export default function VolleyballTeamManager() {
                               </div>
                             </TableCell>
                             <TableCell>{MONTHS[payment.month - 1]} {payment.year}</TableCell>
+                            <TableCell>
+                              {payment.paymentType === 'installment' ? (
+                                <div>
+                                  <Badge variant="outline" className="text-xs border-blue-400 text-blue-600">
+                                    Këst {payment.installmentNumber}/{payment.totalInstallments}
+                                  </Badge>
+                                </div>
+                              ) : payment.paymentType === 'monthly' && payment.planId ? (
+                                <div>
+                                  <Badge variant="outline" className="text-xs border-orange-400 text-orange-600">
+                                    Mujore {payment.installmentNumber}/{payment.totalInstallments}
+                                  </Badge>
+                                </div>
+                              ) : (
+                                <Badge variant="outline" className="text-xs">
+                                  Mujore
+                                </Badge>
+                              )}
+                            </TableCell>
                             <TableCell className="font-semibold">{formatCurrency(payment.amount)}</TableCell>
                             <TableCell>{getStatusBadge(payment.status)}</TableCell>
                             <TableCell>
-                              {payment.paidDate ? new Date(payment.paidDate).toLocaleDateString('sq-AL') : '-'}
+                              {payment.dueDate
+                                ? new Date(payment.dueDate).toLocaleDateString('sq-AL')
+                                : payment.paidDate
+                                  ? new Date(payment.paidDate).toLocaleDateString('sq-AL')
+                                  : '-'}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-2">
@@ -1081,9 +1169,9 @@ export default function VolleyballTeamManager() {
               <div className="flex items-center gap-4">
                 {playerPhoto ? (
                   <div className="relative">
-                    <img 
-                      src={playerPhoto} 
-                      alt="Preview" 
+                    <img
+                      src={playerPhoto}
+                      alt="Preview"
                       className="w-20 h-20 rounded-full object-cover border-2 border-orange-300"
                     />
                     <Button
@@ -1097,7 +1185,7 @@ export default function VolleyballTeamManager() {
                     </Button>
                   </div>
                 ) : (
-                  <div 
+                  <div
                     className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 border-2 border-dashed border-gray-300 dark:border-gray-600"
                     onClick={() => fileInputRef.current?.click()}
                   >
@@ -1112,9 +1200,9 @@ export default function VolleyballTeamManager() {
                     className="hidden"
                     onChange={handlePhotoChange}
                   />
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Camera className="w-4 h-4 mr-2" />
@@ -1192,8 +1280,8 @@ export default function VolleyballTeamManager() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="active">Statusi</Label>
-                <Select 
-                  value={playerForm.active ? 'active' : 'inactive'} 
+                <Select
+                  value={playerForm.active ? 'active' : 'inactive'}
                   onValueChange={(value) => setPlayerForm({ ...playerForm, active: value === 'active' })}
                 >
                   <SelectTrigger>
@@ -1219,94 +1307,224 @@ export default function VolleyballTeamManager() {
       </Dialog>
 
       {/* Payment Dialog */}
-      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={paymentDialogOpen} onOpenChange={(open) => { setPaymentDialogOpen(open); if (!open) { setEditingPayment(null); resetPaymentForm(); } }}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingPayment ? 'Përditëso Pagesën' : 'Shto Pagesë të Re'}</DialogTitle>
+            <DialogTitle>{editingPayment ? 'Përditëso Faturën' : 'Shto Pagesë të Re'}</DialogTitle>
             <DialogDescription>
-              {editingPayment ? 'Përditësoni informacionin e pagesës' : 'Regjistroni një pagesë të re'}
+              {editingPayment
+                ? 'Përditësoni shumën, statusin ose shënimet e kësaj fature'
+                : 'Zgjidhni llojin e pagesës dhe periudhën'}
             </DialogDescription>
           </DialogHeader>
+
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="playerId">Lojtari *</Label>
-              <Select value={paymentForm.playerId} onValueChange={(value) => setPaymentForm({ ...paymentForm, playerId: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Zgjidhni lojtarin" />
-                </SelectTrigger>
-                <SelectContent>
-                  {players.filter(p => p.active).map((player) => (
-                    <SelectItem key={player.id} value={player.id}>
-                      {player.name} {player.jerseyNumber ? `(#${player.jerseyNumber})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="month">Muaji *</Label>
-                <Select value={paymentForm.month} onValueChange={(value) => setPaymentForm({ ...paymentForm, month: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Zgjidhni muajin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MONTHS.map((month, index) => (
-                      <SelectItem key={index} value={(index + 1).toString()}>{month}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="year">Viti *</Label>
-                <Select value={paymentForm.year} onValueChange={(value) => setPaymentForm({ ...paymentForm, year: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Zgjidhni vitin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {years.map((year) => (
-                      <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="amount">Shuma (ALL) *</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  step="100"
-                  value={paymentForm.amount}
-                  onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                  placeholder="5000"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="status">Statusi</Label>
-                <Select value={paymentForm.status} onValueChange={(value) => setPaymentForm({ ...paymentForm, status: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">Në pritje</SelectItem>
-                    <SelectItem value="paid">Paguar</SelectItem>
-                    <SelectItem value="overdue">Vonë</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="notes">Shënime</Label>
-              <Input
-                id="notes"
-                value={paymentForm.notes}
-                onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                placeholder="Shënime opsionale"
-              />
-            </div>
+
+            {/* ── EDIT MODE: simple per-invoice fields ── */}
+            {editingPayment ? (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-amount">Shuma (ALL) *</Label>
+                    <Input
+                      id="edit-amount"
+                      type="number"
+                      step="100"
+                      value={paymentForm.amount}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                      placeholder="5000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-status">Statusi</Label>
+                    <Select value={paymentForm.status} onValueChange={(value) => setPaymentForm({ ...paymentForm, status: value })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">Në pritje</SelectItem>
+                        <SelectItem value="paid">Paguar</SelectItem>
+                        <SelectItem value="overdue">Vonë</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-notes">Shënime</Label>
+                  <Input
+                    id="edit-notes"
+                    value={paymentForm.notes}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                    placeholder="Shënime opsionale"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                {/* ── CREATE MODE ── */}
+
+                {/* Player selector */}
+                <div className="space-y-2">
+                  <Label htmlFor="playerId">Lojtari *</Label>
+                  <Select value={paymentForm.playerId} onValueChange={(value) => setPaymentForm({ ...paymentForm, playerId: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Zgjidhni lojtarin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {players.filter(p => p.active).map((player) => (
+                        <SelectItem key={player.id} value={player.id}>
+                          {player.name} {player.jerseyNumber ? `(#${player.jerseyNumber})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Payment type toggle */}
+                <div className="space-y-2">
+                  <Label>Lloji i Pagesës *</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentForm({ ...paymentForm, paymentType: 'monthly' })}
+                      className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg border-2 text-sm font-medium transition-all ${paymentForm.paymentType === 'monthly'
+                        ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                      <Calendar className="w-4 h-4" />
+                      Mujore
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentForm({ ...paymentForm, paymentType: 'installment' })}
+                      className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg border-2 text-sm font-medium transition-all ${paymentForm.paymentType === 'installment'
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      Me Këste
+                    </button>
+                  </div>
+                </div>
+
+                {/* Start & End Date */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="startDate">Data e Fillimit *</Label>
+                    <Input
+                      id="startDate"
+                      type="date"
+                      value={paymentForm.startDate}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, startDate: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="endDate">
+                      {paymentForm.paymentType === 'installment' ? 'Data e Mbarimit (opsionale)' : 'Data e Mbarimit *'}
+                    </Label>
+                    <Input
+                      id="endDate"
+                      type="date"
+                      value={paymentForm.endDate}
+                      min={paymentForm.startDate}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, endDate: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                {/* Installment count (only for installment type) */}
+                {paymentForm.paymentType === 'installment' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="installments">Numri i Kësteve *</Label>
+                    <Input
+                      id="installments"
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={paymentForm.installments}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, installments: e.target.value })}
+                      placeholder="3"
+                    />
+                  </div>
+                )}
+
+                {/* Total amount + per-invoice preview */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="totalAmount">Shuma Totale (ALL) *</Label>
+                    <Input
+                      id="totalAmount"
+                      type="number"
+                      step="100"
+                      value={paymentForm.totalAmount}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, totalAmount: e.target.value })}
+                      placeholder="15000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="new-status">Statusi Fillestar</Label>
+                    <Select value={paymentForm.status} onValueChange={(value) => setPaymentForm({ ...paymentForm, status: value })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">Në pritje</SelectItem>
+                        <SelectItem value="paid">Paguar</SelectItem>
+                        <SelectItem value="overdue">Vonë</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Invoice preview badge */}
+                {(() => {
+                  let invoiceCount = 0;
+                  let perInvoice = 0;
+                  let previewNote = '';
+
+                  if (paymentForm.paymentType === 'installment') {
+                    invoiceCount = parseInt(paymentForm.installments) || 0;
+                    perInvoice = invoiceCount > 0 ? Math.round((parseFloat(paymentForm.totalAmount) / invoiceCount) * 100) / 100 : 0;
+                    previewNote = invoiceCount > 0 ? `Të gjitha ${invoiceCount} faturat krijohen menjëherë` : '';
+                  } else if (paymentForm.startDate && paymentForm.endDate) {
+                    const start = new Date(paymentForm.startDate);
+                    const end = new Date(paymentForm.endDate);
+                    const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+                    invoiceCount = Math.max(0, months);
+                    perInvoice = parseFloat(paymentForm.totalAmount) || 0;
+                    previewNote = invoiceCount > 1 ? `Vetëm fatura e parë krijohet tani, të tjerat çdo muaj` : '';
+                  }
+
+                  if (invoiceCount <= 0 || !paymentForm.totalAmount) return null;
+
+                  return (
+                    <div className={`flex items-start gap-3 p-3 rounded-lg ${paymentForm.paymentType === 'installment'
+                      ? 'bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800'
+                      : 'bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800'
+                      }`}>
+                      <div className="flex-1">
+                        <p className={`text-sm font-semibold ${paymentForm.paymentType === 'installment' ? 'text-blue-700 dark:text-blue-300' : 'text-orange-700 dark:text-orange-300'}`}>
+                          Do të krijohen {invoiceCount} fatura
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {formatCurrency(perInvoice)} / faturë · {previewNote}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="space-y-2">
+                  <Label htmlFor="notes">Shënime</Label>
+                  <Input
+                    id="notes"
+                    value={paymentForm.notes}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                    placeholder="Shënime opsionale"
+                  />
+                </div>
+              </>
+            )}
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => { setPaymentDialogOpen(false); setEditingPayment(null); resetPaymentForm(); }}>
               Anulo
@@ -1317,6 +1535,7 @@ export default function VolleyballTeamManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
 
       {/* Player View Dialog */}
       <Dialog open={!!viewingPlayer} onOpenChange={() => setViewingPlayer(null)}>
@@ -1336,7 +1555,7 @@ export default function VolleyballTeamManager() {
                   )}
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-gray-500">Email</Label>
@@ -1385,7 +1604,7 @@ export default function VolleyballTeamManager() {
       <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <p className="text-center text-sm text-gray-500 dark:text-gray-400">
-            Menaxheri i Ekipit të Volejbollit &copy; {new Date().getFullYear()}
+            Club Albania Manager &copy; {new Date().getFullYear()}
           </p>
         </div>
       </footer>

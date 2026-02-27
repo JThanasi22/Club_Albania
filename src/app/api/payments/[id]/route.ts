@@ -43,7 +43,7 @@ export async function PUT(
         year: year ? parseInt(year) : undefined,
         amount: amount !== undefined ? parseFloat(amount) : undefined,
         status: status || undefined,
-        paidDate: paidDate ? new Date(paidDate) : (status === 'paid' ? new Date() : null),
+        paidDate: paidDate ? new Date(paidDate) : (status === 'paid' ? new Date() : undefined),
         notes: notes !== undefined ? notes : undefined,
       },
       include: {
@@ -57,6 +57,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Failed to update payment' }, { status: 500 });
   }
 }
+
 
 // DELETE a payment
 export async function DELETE(
