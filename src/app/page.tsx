@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
+import { AnimatedText } from '@/components/AnimatedText';
 import {
   Users, TrendingUp, Calendar, Plus, Pencil, Trash2,
   CheckCircle, Clock, AlertCircle, UserPlus, CreditCard, Search,
@@ -574,7 +575,9 @@ export default function VolleyballTeamManager() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <Volleyball className="w-16 h-16 mx-auto animate-bounce text-orange-500" />
+          <div className="animate-bounce">
+            <Volleyball className="w-16 h-16 mx-auto animate-spin-slow text-orange-500" />
+          </div>
           <p className="mt-4 text-lg text-gray-600 dark:text-gray-400">Po ngarkohet...</p>
         </div>
       </div>
@@ -588,15 +591,21 @@ export default function VolleyballTeamManager() {
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4 w-16 h-16 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center">
-              <Volleyball className="w-10 h-10 text-orange-500" />
+              <Volleyball className="w-10 h-10 text-orange-500 animate-spin-slow" />
             </div>
-            <CardTitle className="text-2xl">Club Albania Manager Portal</CardTitle>
-            <CardDescription>Hyni për të menaxhuar ekipin tuaj</CardDescription>
+            <CardTitle className="text-2xl h-10 flex items-center justify-center overflow-hidden">
+              <AnimatedText text="Club Albania Manager Portal" />
+            </CardTitle>
+            <CardDescription className="h-5 flex items-center justify-center overflow-hidden">
+              <AnimatedText text="Hyni për të menaxhuar ekipin tuaj" />
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="username">Përdoruesi</Label>
+                <Label htmlFor="username" className="h-5 flex items-center overflow-hidden">
+                  <AnimatedText text="Përdoruesi" />
+                </Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
@@ -611,7 +620,9 @@ export default function VolleyballTeamManager() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Fjalëkalimi</Label>
+                <Label htmlFor="password" className="h-5 flex items-center overflow-hidden">
+                  <AnimatedText text="Fjalëkalimi" />
+                </Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
@@ -625,14 +636,14 @@ export default function VolleyballTeamManager() {
                   />
                 </div>
               </div>
-              <Button type="submit" className="w-full" disabled={loginLoading}>
+              <Button type="submit" className="w-full h-10 overflow-hidden" disabled={loginLoading}>
                 {loginLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Duke hyrë...
                   </>
                 ) : (
-                  'Hyr'
+                  <AnimatedText text="Hyr" />
                 )}
               </Button>
             </form>
@@ -646,7 +657,9 @@ export default function VolleyballTeamManager() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <Volleyball className="w-16 h-16 mx-auto animate-bounce text-orange-500" />
+          <div className="animate-bounce">
+            <Volleyball className="w-16 h-16 mx-auto animate-spin-slow text-orange-500" />
+          </div>
           <p className="mt-4 text-lg text-gray-600 dark:text-gray-400">Po ngarkohet...</p>
         </div>
       </div>
@@ -657,23 +670,23 @@ export default function VolleyballTeamManager() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Volleyball className="w-10 h-10 text-orange-500" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Club Albania Manager Portal</h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Mirë se vini, {admin?.name || admin?.username}</p>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <Volleyball className="w-8 h-8 sm:w-10 sm:h-10 text-orange-500" />
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 dark:text-white truncate">Club Albania Manager Portal</h1>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 hidden sm:block">Mirë se vini, {admin?.name || admin?.username}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button onClick={() => { resetPlayerForm(); setEditingPlayer(null); setPlayerDialogOpen(true); }}>
+              <Button onClick={() => { resetPlayerForm(); setEditingPlayer(null); setPlayerDialogOpen(true); }} size="sm" className="hidden sm:flex">
                 <UserPlus className="w-4 h-4 mr-2" />
                 Shto Lojtar
               </Button>
-              <Button variant="outline" onClick={handleLogout}>
-                <LogOut className="w-4 h-4 mr-2" />
-                Dil
+              <Button variant="outline" onClick={handleLogout} size="sm" className="sm:size-default">
+                <LogOut className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Dil</span>
               </Button>
             </div>
           </div>
@@ -683,18 +696,18 @@ export default function VolleyballTeamManager() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3 mb-6">
-            <TabsTrigger value="dashboard">
-              <TrendingUp className="w-4 h-4 mr-2" />
-              Përgjithësi
+          <TabsList className="grid w-full grid-cols-3 mb-4 sm:mb-6 h-auto">
+            <TabsTrigger value="dashboard" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
+              <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="text-xs sm:text-sm">Përgjithësi</span>
             </TabsTrigger>
-            <TabsTrigger value="players">
-              <Users className="w-4 h-4 mr-2" />
-              Lojtarët
+            <TabsTrigger value="players" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
+              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="text-xs sm:text-sm">Lojtarët</span>
             </TabsTrigger>
-            <TabsTrigger value="payments">
-              <CreditCard className="w-4 h-4 mr-2" />
-              Pagesat
+            <TabsTrigger value="payments" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
+              <CreditCard className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="text-xs sm:text-sm">Pagesat</span>
             </TabsTrigger>
           </TabsList>
 
@@ -763,21 +776,21 @@ export default function VolleyballTeamManager() {
                 <CardDescription>Përmbledhje e arkëtimit të pagesave këtë muaj</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-3 gap-4 mb-4">
-                  <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                    <CheckCircle className="w-8 h-8 mx-auto text-green-500 mb-2" />
-                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats?.currentMonth.paid || 0}</div>
-                    <div className="text-sm text-gray-500">Paguar</div>
+                <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
+                  <div className="text-center p-2 sm:p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                    <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8 mx-auto text-green-500 mb-1 sm:mb-2" />
+                    <div className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">{stats?.currentMonth.paid || 0}</div>
+                    <div className="text-xs sm:text-sm text-gray-500">Paguar</div>
                   </div>
-                  <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                    <Clock className="w-8 h-8 mx-auto text-yellow-500 mb-2" />
-                    <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{stats?.currentMonth.pending || 0}</div>
-                    <div className="text-sm text-gray-500">Në pritje</div>
+                  <div className="text-center p-2 sm:p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                    <Clock className="w-6 h-6 sm:w-8 sm:h-8 mx-auto text-yellow-500 mb-1 sm:mb-2" />
+                    <div className="text-xl sm:text-2xl font-bold text-yellow-600 dark:text-yellow-400">{stats?.currentMonth.pending || 0}</div>
+                    <div className="text-xs sm:text-sm text-gray-500">Në pritje</div>
                   </div>
-                  <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                    <AlertCircle className="w-8 h-8 mx-auto text-red-500 mb-2" />
-                    <div className="text-2xl font-bold text-red-600 dark:text-red-400">{(stats?.currentMonth.totalExpected || 0) - (stats?.currentMonth.paid || 0) - (stats?.currentMonth.pending || 0)}</div>
-                    <div className="text-sm text-gray-500">Pa filluar</div>
+                  <div className="text-center p-2 sm:p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                    <AlertCircle className="w-6 h-6 sm:w-8 sm:h-8 mx-auto text-red-500 mb-1 sm:mb-2" />
+                    <div className="text-xl sm:text-2xl font-bold text-red-600 dark:text-red-400">{(stats?.currentMonth.totalExpected || 0) - (stats?.currentMonth.paid || 0) - (stats?.currentMonth.pending || 0)}</div>
+                    <div className="text-xs sm:text-sm text-gray-500">Pa filluar</div>
                   </div>
                 </div>
               </CardContent>
@@ -878,17 +891,17 @@ export default function VolleyballTeamManager() {
                     <CardTitle>Lista e Lojtarëve</CardTitle>
                     <CardDescription>Menaxhoni lojtarët e ekipit tuaj</CardDescription>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
                         placeholder="Kërko lojtarë..."
                         value={playerSearch}
                         onChange={(e) => setPlayerSearch(e.target.value)}
-                        className="pl-10 w-64"
+                        className="pl-10 w-full sm:w-64"
                       />
                     </div>
-                    <Button onClick={() => { resetPlayerForm(); setEditingPlayer(null); setPlayerDialogOpen(true); }}>
+                    <Button onClick={() => { resetPlayerForm(); setEditingPlayer(null); setPlayerDialogOpen(true); }} className="w-full sm:w-auto">
                       <Plus className="w-4 h-4 mr-2" />
                       Shto Lojtar
                     </Button>
@@ -906,7 +919,44 @@ export default function VolleyballTeamManager() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <>
+                    {/* Mobile Card Layout */}
+                    <div className="sm:hidden space-y-3">
+                      {filteredPlayers.map((player) => (
+                        <div key={player.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm">
+                          <div className="flex items-start gap-3">
+                            {getPlayerAvatar(player, 'lg')}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <h3 className="font-semibold text-gray-900 dark:text-white truncate">{player.name}</h3>
+                                <Badge variant={player.active ? 'default' : 'secondary'} className="ml-2">
+                                  {player.active ? 'Aktiv' : 'Joaktiv'}
+                                </Badge>
+                              </div>
+                              <div className="mt-1 text-sm text-gray-500 space-y-1">
+                                {player.position && <p>📍 {player.position}</p>}
+                                {player.jerseyNumber && <p>👕 Nr. {player.jerseyNumber}</p>}
+                                {player.email && <p className="truncate">✉️ {player.email}</p>}
+                                {player.phone && <p>📞 {player.phone}</p>}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex justify-end gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                            <Button size="sm" variant="outline" onClick={() => setViewingPlayer(player)}>
+                              <Eye className="w-4 h-4 mr-1" /> Shiko
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => openEditPlayer(player)}>
+                              <Pencil className="w-4 h-4 mr-1" /> Ndrysho
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => handleDeletePlayer(player.id)}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Desktop Table Layout */}
+                    <div className="hidden sm:block overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -971,7 +1021,8 @@ export default function VolleyballTeamManager() {
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -981,71 +1032,77 @@ export default function VolleyballTeamManager() {
           <TabsContent value="payments" className="space-y-6">
             <Card>
               <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex flex-col gap-4">
                   <div>
                     <CardTitle>Regjistri i Pagesave</CardTitle>
                     <CardDescription>Ndjekni statusin e pagesave mujore</CardDescription>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Select value={paymentMonthFilter} onValueChange={setPaymentMonthFilter}>
-                      <SelectTrigger className="w-32">
-                        <SelectValue placeholder="Muaji" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Të gjithë</SelectItem>
-                        {MONTHS.map((month, index) => (
-                          <SelectItem key={index} value={(index + 1).toString()}>
-                            {month}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select value={paymentYearFilter} onValueChange={setPaymentYearFilter}>
-                      <SelectTrigger className="w-28">
-                        <SelectValue placeholder="Viti" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Të gjithë</SelectItem>
-                        {years.map((year) => (
-                          <SelectItem key={year} value={year.toString()}>
-                            {year}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
-                      <SelectTrigger className="w-32">
-                        <SelectValue placeholder="Statusi" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Të gjithë</SelectItem>
-                        <SelectItem value="paid">Paguar</SelectItem>
-                        <SelectItem value="pending">Në pritje</SelectItem>
-                        <SelectItem value="overdue">Vonë</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button onClick={() => { resetPaymentForm(); setEditingPayment(null); setPaymentDialogOpen(true); }}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Shto Pagesë
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={async () => {
-                        try {
-                          const res = await fetch('/api/payments/generate-due', { method: 'POST' });
-                          const data = await res.json();
-                          if (!res.ok) throw new Error(data.error);
-                          toast.success(data.message || 'Faturat u gjeneruan');
-                          fetchPayments();
-                          fetchStats();
-                        } catch {
-                          toast.error('Gjenerimi i faturave dështoi');
-                        }
-                      }}
-                    >
-                      <Calendar className="w-4 h-4 mr-2" />
-                      Gjeneroni Faturat
-                    </Button>
+                  <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2">
+                    <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-2">
+                      <Select value={paymentMonthFilter} onValueChange={setPaymentMonthFilter}>
+                        <SelectTrigger className="w-full sm:w-32">
+                          <SelectValue placeholder="Muaji" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Të gjithë</SelectItem>
+                          {MONTHS.map((month, index) => (
+                            <SelectItem key={index} value={(index + 1).toString()}>
+                              {month}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={paymentYearFilter} onValueChange={setPaymentYearFilter}>
+                        <SelectTrigger className="w-full sm:w-28">
+                          <SelectValue placeholder="Viti" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Të gjithë</SelectItem>
+                          {years.map((year) => (
+                            <SelectItem key={year} value={year.toString()}>
+                              {year}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
+                        <SelectTrigger className="w-full sm:w-32">
+                          <SelectValue placeholder="Statusi" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Të gjithë</SelectItem>
+                          <SelectItem value="paid">Paguar</SelectItem>
+                          <SelectItem value="pending">Në pritje</SelectItem>
+                          <SelectItem value="overdue">Vonë</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={() => { resetPaymentForm(); setEditingPayment(null); setPaymentDialogOpen(true); }} className="flex-1 sm:flex-initial">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Shto Pagesë
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1 sm:flex-initial"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('/api/payments/generate-due', { method: 'POST' });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.error);
+                            toast.success(data.message || 'Faturat u gjeneruan');
+                            fetchPayments();
+                            fetchStats();
+                          } catch {
+                            toast.error('Gjenerimi i faturave dështoi');
+                          }
+                        }}
+                      >
+                        <Calendar className="w-4 h-4 mr-2" />
+                        <span className="hidden sm:inline">Gjeneroni Faturat</span>
+                        <span className="sm:hidden">Gjenero</span>
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardHeader>
@@ -1060,7 +1117,60 @@ export default function VolleyballTeamManager() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <>
+                    {/* Mobile Card Layout */}
+                    <div className="sm:hidden space-y-3">
+                      {payments.map((payment) => (
+                        <div key={payment.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              {getPlayerAvatar(payment.player, 'md')}
+                              <div>
+                                <h3 className="font-semibold text-gray-900 dark:text-white">{payment.player?.name || 'I panjohur'}</h3>
+                                <p className="text-xs text-gray-500">{MONTHS[payment.month - 1]} {payment.year}</p>
+                              </div>
+                            </div>
+                            {getStatusBadge(payment.status)}
+                          </div>
+                          <div className="flex items-center justify-between py-2 border-t border-gray-100 dark:border-gray-700">
+                            <div className="text-sm text-gray-500">
+                              {payment.paymentType === 'installment' ? (
+                                <Badge variant="outline" className="text-xs border-blue-400 text-blue-600">
+                                  Këst {payment.installmentNumber}/{payment.totalInstallments}
+                                </Badge>
+                              ) : payment.paymentType === 'monthly' && payment.planId ? (
+                                <Badge variant="outline" className="text-xs border-orange-400 text-orange-600">
+                                  Mujore {payment.installmentNumber}/{payment.totalInstallments}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs">Mujore</Badge>
+                              )}
+                            </div>
+                            <div className="font-bold text-lg">{formatCurrency(payment.amount)}</div>
+                          </div>
+                          <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700">
+                            <span className="text-xs text-gray-500">
+                              {payment.dueDate ? `Afati: ${new Date(payment.dueDate).toLocaleDateString('sq-AL')}` : '-'}
+                            </span>
+                            <div className="flex gap-2">
+                              {payment.status !== 'paid' && (
+                                <Button size="sm" variant="outline" className="text-green-600" onClick={() => handleMarkAsPaid(payment)}>
+                                  <CheckCircle className="w-4 h-4 mr-1" /> Paguar
+                                </Button>
+                              )}
+                              <Button size="sm" variant="outline" onClick={() => openEditPayment(payment)}>
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button size="sm" variant="destructive" onClick={() => handleDeletePayment(payment.id)}>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Desktop Table Layout */}
+                    <div className="hidden sm:block overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -1145,7 +1255,8 @@ export default function VolleyballTeamManager() {
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -1155,7 +1266,7 @@ export default function VolleyballTeamManager() {
 
       {/* Player Dialog */}
       <Dialog open={playerDialogOpen} onOpenChange={setPlayerDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingPlayer ? 'Përditëso Lojtarin' : 'Shto Lojtar të Ri'}</DialogTitle>
             <DialogDescription>
@@ -1172,7 +1283,7 @@ export default function VolleyballTeamManager() {
                     <img
                       src={playerPhoto}
                       alt="Preview"
-                      className="w-20 h-20 rounded-full object-cover border-2 border-orange-300"
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-orange-300"
                     />
                     <Button
                       type="button"
@@ -1186,10 +1297,10 @@ export default function VolleyballTeamManager() {
                   </div>
                 ) : (
                   <div
-                    className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 border-2 border-dashed border-gray-300 dark:border-gray-600"
+                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 border-2 border-dashed border-gray-300 dark:border-gray-600"
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    <Camera className="w-8 h-8 text-gray-400" />
+                    <Camera className="w-6 h-6 sm:w-8 sm:h-8 text-gray-400" />
                   </div>
                 )}
                 <div className="flex-1">
@@ -1222,7 +1333,7 @@ export default function VolleyballTeamManager() {
                 placeholder="Emri i lojtarit"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -1243,7 +1354,7 @@ export default function VolleyballTeamManager() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="position">Pozicioni</Label>
                 <Select value={playerForm.position} onValueChange={(value) => setPlayerForm({ ...playerForm, position: value })}>
@@ -1268,7 +1379,7 @@ export default function VolleyballTeamManager() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="joinDate">Data e Bashkimit</Label>
                 <Input
@@ -1295,11 +1406,11 @@ export default function VolleyballTeamManager() {
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setPlayerDialogOpen(false); setEditingPlayer(null); resetPlayerForm(); }}>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => { setPlayerDialogOpen(false); setEditingPlayer(null); resetPlayerForm(); }} className="w-full sm:w-auto">
               Anulo
             </Button>
-            <Button onClick={editingPlayer ? handleUpdatePlayer : handleCreatePlayer}>
+            <Button onClick={editingPlayer ? handleUpdatePlayer : handleCreatePlayer} className="w-full sm:w-auto">
               {editingPlayer ? 'Përditëso' : 'Shto'} Lojtarin
             </Button>
           </DialogFooter>
@@ -1323,7 +1434,7 @@ export default function VolleyballTeamManager() {
             {/* ── EDIT MODE: simple per-invoice fields ── */}
             {editingPayment ? (
               <>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-amount">Shuma (ALL) *</Label>
                     <Input
@@ -1408,7 +1519,7 @@ export default function VolleyballTeamManager() {
                 </div>
 
                 {/* Start & End Date */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="startDate">Data e Fillimit *</Label>
                     <Input
@@ -1449,7 +1560,7 @@ export default function VolleyballTeamManager() {
                 )}
 
                 {/* Total amount + per-invoice preview */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="totalAmount">Shuma Totale (ALL) *</Label>
                     <Input
@@ -1525,11 +1636,11 @@ export default function VolleyballTeamManager() {
             )}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setPaymentDialogOpen(false); setEditingPayment(null); resetPaymentForm(); }}>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => { setPaymentDialogOpen(false); setEditingPayment(null); resetPaymentForm(); }} className="w-full sm:w-auto">
               Anulo
             </Button>
-            <Button onClick={editingPayment ? handleUpdatePayment : handleCreatePayment}>
+            <Button onClick={editingPayment ? handleUpdatePayment : handleCreatePayment} className="w-full sm:w-auto">
               {editingPayment ? 'Përditëso' : 'Shto'} Pagesën
             </Button>
           </DialogFooter>
@@ -1539,7 +1650,7 @@ export default function VolleyballTeamManager() {
 
       {/* Player View Dialog */}
       <Dialog open={!!viewingPlayer} onOpenChange={() => setViewingPlayer(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detajet e Lojtarit</DialogTitle>
           </DialogHeader>
@@ -1556,10 +1667,10 @@ export default function VolleyballTeamManager() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-gray-500">Email</Label>
-                  <p className="font-medium">{viewingPlayer.email || '-'}</p>
+                  <p className="font-medium break-all">{viewingPlayer.email || '-'}</p>
                 </div>
                 <div>
                   <Label className="text-gray-500">Telefoni</Label>
