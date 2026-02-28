@@ -116,6 +116,7 @@ export default function VolleyballTeamManager() {
   
   // Photo state
   const [playerPhoto, setPlayerPhoto] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Player form
@@ -257,20 +258,33 @@ export default function VolleyballTeamManager() {
     }
   }, [paymentMonthFilter, paymentYearFilter, paymentStatusFilter, authenticated]);
 
-  // Handle photo upload
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle photo upload to Cloudinary
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        toast.error('Fotoja nuk duhet të jetë më e madhe se 2MB');
-        return;
+      setPhotoUploading(true);
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Ngarkimi i fotos dështoi');
+        }
+
+        const data = await res.json();
+        setPlayerPhoto(data.url);
+        toast.success('Fotoja u ngarkua me sukses');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Ngarkimi i fotos dështoi');
+      } finally {
+        setPhotoUploading(false);
       }
-      
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPlayerPhoto(reader.result as string);
-      };
-      reader.readAsDataURL(file);
     }
   };
 
@@ -1092,16 +1106,21 @@ export default function VolleyballTeamManager() {
                       variant="destructive"
                       className="absolute -top-2 -right-2 w-6 h-6 rounded-full p-0"
                       onClick={removePhoto}
+                      disabled={photoUploading}
                     >
                       <X className="w-3 h-3" />
                     </Button>
                   </div>
                 ) : (
                   <div 
-                    className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 border-2 border-dashed border-gray-300 dark:border-gray-600"
-                    onClick={() => fileInputRef.current?.click()}
+                    className={`w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 border-2 border-dashed border-gray-300 dark:border-gray-600 ${photoUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    onClick={() => !photoUploading && fileInputRef.current?.click()}
                   >
-                    <Camera className="w-8 h-8 text-gray-400" />
+                    {photoUploading ? (
+                      <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
+                    ) : (
+                      <Camera className="w-8 h-8 text-gray-400" />
+                    )}
                   </div>
                 )}
                 <div className="flex-1">
@@ -1111,16 +1130,27 @@ export default function VolleyballTeamManager() {
                     accept="image/*"
                     className="hidden"
                     onChange={handlePhotoChange}
+                    disabled={photoUploading}
                   />
                   <Button 
                     type="button" 
                     variant="outline" 
                     onClick={() => fileInputRef.current?.click()}
+                    disabled={photoUploading}
                   >
-                    <Camera className="w-4 h-4 mr-2" />
-                    {playerPhoto ? 'Ndrysho Foton' : 'Ngarko Foto'}
+                    {photoUploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Duke ngarkuar...
+                      </>
+                    ) : (
+                      <>
+                        <Camera className="w-4 h-4 mr-2" />
+                        {playerPhoto ? 'Ndrysho Foton' : 'Ngarko Foto'}
+                      </>
+                    )}
                   </Button>
-                  <p className="text-xs text-gray-500 mt-1">Maksimumi 2MB, JPG/PNG</p>
+                  <p className="text-xs text-gray-500 mt-1">JPG, PNG, GIF, WebP</p>
                 </div>
               </div>
             </div>
