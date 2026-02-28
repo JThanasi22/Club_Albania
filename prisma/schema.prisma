@@ -15,9 +15,9 @@ model Player {
   name         String
   email        String?
   phone        String?
-  position     String?   // e.g., "Setter", "Outside Hitter", "Middle Blocker", "Libero"
+  team         String?   // e.g., "U20", "U18", "U16", "U14", "U10"
   jerseyNumber Int?
-  photo        String?   // Base64 encoded image
+  photo        String?   // Cloudinary URL
   joinDate     DateTime  @default(now())
   active       Boolean   @default(true)
   createdAt    DateTime  @default(now())

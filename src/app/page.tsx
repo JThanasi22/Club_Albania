@@ -27,7 +27,7 @@ interface Player {
   name: string;
   email: string | null;
   phone: string | null;
-  position: string | null;
+  team: string | null;
   jerseyNumber: number | null;
   photo: string | null;
   joinDate: string;
@@ -85,9 +85,8 @@ const MONTHS = [
   'Korrik', 'Gusht', 'Shtator', 'Tetor', 'Nëntor', 'Dhjetor'
 ];
 
-const POSITIONS = [
-  'Pasues', 'Sulmues Jashtë', 'Sulmues Kundër',
-  'Bllokues Mesor', 'Libero', 'Specialist Mbrojtës'
+const TEAMS = [
+  'U20', 'U18', 'U16', 'U14', 'U10'
 ];
 
 // Format currency in ALL (Albanian Lek)
@@ -152,7 +151,7 @@ export default function VolleyballTeamManager() {
     name: '',
     email: '',
     phone: '',
-    position: '',
+    team: '',
     jerseyNumber: '',
     joinDate: new Date().toISOString().split('T')[0],
     active: true,
@@ -499,7 +498,7 @@ export default function VolleyballTeamManager() {
       name: '',
       email: '',
       phone: '',
-      position: '',
+      team: '',
       jerseyNumber: '',
       joinDate: new Date().toISOString().split('T')[0],
       active: true,
@@ -533,7 +532,7 @@ export default function VolleyballTeamManager() {
       name: player.name,
       email: player.email || '',
       phone: player.phone || '',
-      position: player.position || '',
+      team: player.team || '',
       jerseyNumber: player.jerseyNumber?.toString() || '',
       joinDate: new Date(player.joinDate).toISOString().split('T')[0],
       active: player.active,
@@ -568,7 +567,7 @@ export default function VolleyballTeamManager() {
   const filteredPlayers = (players || []).filter(player =>
     player?.name?.toLowerCase().includes(playerSearch.toLowerCase()) ||
     player?.email?.toLowerCase().includes(playerSearch.toLowerCase()) ||
-    player?.position?.toLowerCase().includes(playerSearch.toLowerCase())
+    player?.team?.toLowerCase().includes(playerSearch.toLowerCase())
   );
 
   // Generate year options
@@ -905,7 +904,7 @@ export default function VolleyballTeamManager() {
                             {getPlayerAvatar(player, 'md')}
                             <div>
                               <div className="font-medium text-gray-900 dark:text-white">{player.name}</div>
-                              <div className="text-sm text-gray-500">{player.position || 'Pa pozicion'}</div>
+                              <div className="text-sm text-gray-500">{player.team || 'Pa ekip'}</div>
                             </div>
                           </div>
                           <Button
@@ -985,7 +984,7 @@ export default function VolleyballTeamManager() {
                                 </Badge>
                               </div>
                               <div className="mt-1 text-sm text-gray-500 space-y-1">
-                                {player.position && <p>📍 {player.position}</p>}
+                                {player.team && <p>📍 {player.team}</p>}
                                 {player.jerseyNumber && <p>👕 Nr. {player.jerseyNumber}</p>}
                                 {player.email && <p className="truncate">✉️ {player.email}</p>}
                                 {player.phone && <p>📞 {player.phone}</p>}
@@ -1013,7 +1012,7 @@ export default function VolleyballTeamManager() {
                         <TableRow>
                           <TableHead>Foto</TableHead>
                           <TableHead>Emri</TableHead>
-                          <TableHead>Pozicioni</TableHead>
+                          <TableHead>Ekipi</TableHead>
                           <TableHead>Numri</TableHead>
                           <TableHead>Kontakti</TableHead>
                           <TableHead>Statusi</TableHead>
@@ -1029,7 +1028,7 @@ export default function VolleyballTeamManager() {
                             <TableCell className="font-medium">
                               {player.name}
                             </TableCell>
-                            <TableCell>{player.position || '-'}</TableCell>
+                            <TableCell>{player.team || '-'}</TableCell>
                             <TableCell>{player.jerseyNumber || '-'}</TableCell>
                             <TableCell>
                               <div className="text-sm">
@@ -1423,14 +1422,14 @@ export default function VolleyballTeamManager() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="position">Pozicioni</Label>
-                <Select value={playerForm.position} onValueChange={(value) => setPlayerForm({ ...playerForm, position: value })}>
+                <Label htmlFor="team">Ekipi</Label>
+                <Select value={playerForm.team} onValueChange={(value) => setPlayerForm({ ...playerForm, team: value })}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Zgjidhni pozicionin" />
+                    <SelectValue placeholder="Zgjidhni ekipin" />
                   </SelectTrigger>
                   <SelectContent>
-                    {POSITIONS.map((pos) => (
-                      <SelectItem key={pos} value={pos}>{pos}</SelectItem>
+                    {TEAMS.map((team) => (
+                      <SelectItem key={team} value={team}>{team}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1727,7 +1726,7 @@ export default function VolleyballTeamManager() {
                 {getPlayerAvatar(viewingPlayer, 'lg')}
                 <div>
                   <h3 className="text-xl font-semibold">{viewingPlayer.name}</h3>
-                  <p className="text-gray-500">{viewingPlayer.position || 'Pa pozicion të caktuar'}</p>
+                  <p className="text-gray-500">{viewingPlayer.team || 'Pa ekip të caktuar'}</p>
                   {viewingPlayer.jerseyNumber && (
                     <Badge className="mt-1">#{viewingPlayer.jerseyNumber}</Badge>
                   )}

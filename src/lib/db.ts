@@ -10,7 +10,7 @@ declare global {
 // Use environment variable only if it's a valid MongoDB URL
 const DATABASE_URL = (process.env.DATABASE_URL?.startsWith('mongo') === true)
   ? process.env.DATABASE_URL
-  : MONGODB_URL
+  : process.env.MONGODB_URL
 
 export const db = global.prisma ?? new PrismaClient({
   datasourceUrl: DATABASE_URL,

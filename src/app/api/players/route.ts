@@ -23,7 +23,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, email, phone, position, jerseyNumber, photo, joinDate, active } = body;
+    const { name, email, phone, team, jerseyNumber, photo, joinDate, active } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Emri është i detyrueshëm' }, { status: 400 });
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
         name,
         email: email || null,
         phone: phone || null,
-        position: position || null,
+        team: team || null,
         jerseyNumber: jerseyNumber ? parseInt(jerseyNumber) : null,
         photo: photo || null,
         joinDate: joinDate ? new Date(joinDate) : new Date(),

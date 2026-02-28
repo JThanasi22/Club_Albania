@@ -39,7 +39,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, email, phone, position, jerseyNumber, photo, joinDate, active } = body;
+    const { name, email, phone, team, jerseyNumber, photo, joinDate, active } = body;
 
     const player = await db.player.update({
       where: { id },
@@ -47,7 +47,7 @@ export async function PUT(
         name,
         email: email || null,
         phone: phone || null,
-        position: position || null,
+        team: team || null,
         jerseyNumber: jerseyNumber ? parseInt(jerseyNumber) : null,
         photo: photo !== undefined ? photo : undefined,
         joinDate: joinDate ? new Date(joinDate) : undefined,
