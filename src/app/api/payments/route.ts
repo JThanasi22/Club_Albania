@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { randomUUID } from 'crypto';
 
-// GET all payments
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -18,8 +17,14 @@ export async function GET(request: Request) {
       status?: string;
     } = {};
 
-    if (month) where.month = parseInt(month);
-    if (year) where.year = parseInt(year);
+    if (month) {
+      const m = parseInt(month);
+      if (!isNaN(m) && m >= 1 && m <= 12) where.month = m;
+    }
+    if (year) {
+      const y = parseInt(year);
+      if (!isNaN(y) && y >= 2000 && y <= 2100) where.year = y;
+    }
     if (playerId) where.playerId = playerId;
     if (status) where.status = status;
 
@@ -41,7 +46,6 @@ export async function GET(request: Request) {
   }
 }
 
-// POST create a new payment (or a payment plan with multiple invoices)
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -49,12 +53,13 @@ export async function POST(request: Request) {
       playerId,
       paymentType,
       totalAmount,
+      amountPerMonth,
+      totalPlanAmount,
       startDate,
       endDate,
       installments,
       status,
       notes,
-      // Legacy single-payment fields (for edit compatibility)
       month,
       year,
       amount,
@@ -64,14 +69,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Mungon fusha e detyrueshme: playerId' }, { status: 400 });
     }
 
-    // ── LEGACY single-payment mode (used by edit dialog) ──────────────────
     if (month && year && amount !== undefined && !paymentType) {
+      const parsedAmount = parseFloat(amount);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        return NextResponse.json({ error: 'Shuma duhet të jetë numër pozitiv' }, { status: 400 });
+      }
       const payment = await db.payment.create({
         data: {
           playerId,
           month: parseInt(month),
           year: parseInt(year),
-          amount: parseFloat(amount),
+          amount: parsedAmount,
           status: status || 'pending',
           paidDate: status === 'paid' ? new Date() : null,
           notes: notes || null,
@@ -82,10 +90,9 @@ export async function POST(request: Request) {
       return NextResponse.json(payment, { status: 201 });
     }
 
-    // ── NEW payment plan mode ──────────────────────────────────────────────
-    if (!paymentType || !startDate || amount === undefined && totalAmount === undefined) {
+    if (!paymentType || !startDate || (amount === undefined && totalAmount === undefined && amountPerMonth === undefined && totalPlanAmount === undefined)) {
       return NextResponse.json(
-        { error: 'Mungojnë fushat e detyrueshme: paymentType, startDate, dhe totalAmount' },
+        { error: 'Mungojnë fushat e detyrueshme: paymentType, startDate, dhe shuma' },
         { status: 400 }
       );
     }
@@ -93,17 +100,19 @@ export async function POST(request: Request) {
     const planStartDate = new Date(startDate);
     const planEndDate = endDate ? new Date(endDate) : null;
     const planId = randomUUID();
-    const amountPerInvoice = parseFloat(totalAmount);
     const initialStatus = status || 'pending';
 
-    // ── INSTALLMENT plan ──────────────────────────────────────────────────
     if (paymentType === 'installment') {
+      const rawAmount = parseFloat(totalAmount ?? amount);
+      if (isNaN(rawAmount) || rawAmount <= 0) {
+        return NextResponse.json({ error: 'Shuma duhet të jetë numër pozitiv' }, { status: 400 });
+      }
+
       const numInstallments = parseInt(installments);
       if (!numInstallments || numInstallments < 1) {
         return NextResponse.json({ error: 'Numri i kësteve duhet të jetë të paktën 1' }, { status: 400 });
       }
 
-      // End date is now mandatory for installments
       if (!planEndDate) {
         return NextResponse.json({ error: 'Data e mbarimit është e detyrueshme për pagesat me këste' }, { status: 400 });
       }
@@ -112,30 +121,27 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Data e mbarimit duhet të jetë pas datës së fillimit' }, { status: 400 });
       }
 
-      const amountEach = Math.round((amountPerInvoice / numInstallments) * 100) / 100;
+      const amountEach = Math.round((rawAmount / numInstallments) * 100) / 100;
       const invoices = [];
 
-      // Calculate the total period in milliseconds
       const totalPeriodMs = planEndDate.getTime() - planStartDate.getTime();
-      // Calculate the interval between each installment
       const intervalMs = totalPeriodMs / numInstallments;
 
       for (let i = 0; i < numInstallments; i++) {
-        // Calculate due date for this installment
-        // Each installment is due at evenly spaced intervals
         const dueDate = new Date(planStartDate.getTime() + (intervalMs * (i + 1)));
 
-        // Determine the month/year for the "Periudha" display
-        // Use the midpoint of the installment period for the month/year
         const periodStart = new Date(planStartDate.getTime() + (intervalMs * i));
         const periodEnd = i === numInstallments - 1 ? planEndDate : new Date(planStartDate.getTime() + (intervalMs * (i + 1)));
         const midPeriod = new Date((periodStart.getTime() + periodEnd.getTime()) / 2);
+
+        const isLast = i === numInstallments - 1;
+        const thisAmount = isLast ? Math.round((rawAmount - amountEach * (numInstallments - 1)) * 100) / 100 : amountEach;
 
         invoices.push({
           playerId,
           month: midPeriod.getMonth() + 1,
           year: midPeriod.getFullYear(),
-          amount: amountEach,
+          amount: thisAmount,
           status: initialStatus,
           paidDate: initialStatus === 'paid' ? new Date() : null,
           notes: notes || null,
@@ -150,7 +156,6 @@ export async function POST(request: Request) {
       }
 
       const created = await db.payment.createMany({ data: invoices });
-      // Return total created count + fetch them back
       const payments = await db.payment.findMany({
         where: { planId },
         include: { player: true },
@@ -162,13 +167,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── MONTHLY plan ──────────────────────────────────────────────────────
     if (paymentType === 'monthly') {
       if (!planEndDate) {
         return NextResponse.json({ error: 'Data e mbarimit është e detyrueshme për pagesat mujore' }, { status: 400 });
       }
 
-      // Count how many months are in the plan
       const startYear = planStartDate.getFullYear();
       const startMonth = planStartDate.getMonth();
       const endYear = planEndDate.getFullYear();
@@ -179,13 +182,40 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Data e mbarimit duhet të jetë në ose pas datës së fillimit' }, { status: 400 });
       }
 
-      // Create ONLY the first invoice now
-      const dueDate = new Date(planStartDate);
-      const firstPayment = await db.payment.create({
-        data: {
+      let amountPerInvoice: number;
+
+      if (totalPlanAmount !== undefined && totalPlanAmount !== null && totalPlanAmount !== '') {
+        const parsedTotal = parseFloat(totalPlanAmount);
+        if (isNaN(parsedTotal) || parsedTotal <= 0) {
+          return NextResponse.json({ error: 'Shuma totale duhet të jetë numër pozitiv' }, { status: 400 });
+        }
+        amountPerInvoice = Math.round((parsedTotal / totalMonths) * 100) / 100;
+      } else {
+        const rawPerMonth = parseFloat(amountPerMonth ?? totalAmount ?? amount);
+        if (isNaN(rawPerMonth) || rawPerMonth <= 0) {
+          return NextResponse.json({ error: 'Shuma duhet të jetë numër pozitiv' }, { status: 400 });
+        }
+        amountPerInvoice = rawPerMonth;
+      }
+
+      const dueDay = planStartDate.getDate();
+      const invoices = [];
+
+      for (let i = 0; i < totalMonths; i++) {
+        let invoiceMonth = startMonth + i;
+        let invoiceYear = startYear;
+
+        invoiceYear += Math.floor(invoiceMonth / 12);
+        invoiceMonth = invoiceMonth % 12;
+
+        const lastDayOfMonth = new Date(invoiceYear, invoiceMonth + 1, 0).getDate();
+        const cappedDay = Math.min(dueDay, lastDayOfMonth);
+        const dueDate = new Date(invoiceYear, invoiceMonth, cappedDay);
+
+        invoices.push({
           playerId,
-          month: dueDate.getMonth() + 1,
-          year: dueDate.getFullYear(),
+          month: invoiceMonth + 1,
+          year: invoiceYear,
           amount: amountPerInvoice,
           status: initialStatus,
           paidDate: initialStatus === 'paid' ? new Date() : null,
@@ -195,14 +225,20 @@ export async function POST(request: Request) {
           planStartDate,
           planEndDate,
           dueDate,
-          installmentNumber: 1,
+          installmentNumber: i + 1,
           totalInstallments: totalMonths,
-        },
+        });
+      }
+
+      const created = await db.payment.createMany({ data: invoices });
+      const payments = await db.payment.findMany({
+        where: { planId },
         include: { player: true },
+        orderBy: { installmentNumber: 'asc' },
       });
 
       return NextResponse.json(
-        { count: 1, totalPlanned: totalMonths, payments: [firstPayment] },
+        { count: created.count, totalPlanned: totalMonths, payments },
         { status: 201 }
       );
     }

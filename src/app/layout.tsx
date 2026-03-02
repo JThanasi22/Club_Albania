@@ -48,13 +48,16 @@ export default function RootLayout({
         >
           {children}
           <Toaster 
-            position="bottom-right"
+            position="top-center"
             richColors
+            className="toaster-responsive"
             toastOptions={{
+              className: 'toast-with-bg',
               style: {
-                background: 'hsl(var(--background))',
-                color: 'hsl(var(--foreground))',
+                background: 'hsl(var(--card))',
+                color: 'hsl(var(--card-foreground))',
                 border: '1px solid hsl(var(--border))',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
               },
             }}
           />

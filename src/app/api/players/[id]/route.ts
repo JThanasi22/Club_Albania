@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// GET a single player
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -31,7 +30,6 @@ export async function GET(
   }
 }
 
-// PUT update a player
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -41,10 +39,19 @@ export async function PUT(
     const body = await request.json();
     const { name, email, phone, team, jerseyNumber, photo, joinDate, active } = body;
 
+    const existing = await db.player.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: 'Lojtari nuk u gjet' }, { status: 404 });
+    }
+
+    if (name !== undefined && (!name || !name.trim())) {
+      return NextResponse.json({ error: 'Emri nuk mund të jetë bosh' }, { status: 400 });
+    }
+
     const player = await db.player.update({
       where: { id },
       data: {
-        name,
+        name: name !== undefined ? name.trim() : undefined,
         email: email || null,
         phone: phone || null,
         team: team || null,
@@ -62,13 +69,18 @@ export async function PUT(
   }
 }
 
-// DELETE a player
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
+
+    const existing = await db.player.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: 'Lojtari nuk u gjet' }, { status: 404 });
+    }
+
     await db.player.delete({
       where: { id },
     });

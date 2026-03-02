@@ -43,6 +43,8 @@ model Payment {
   dueDate            DateTime? // when this specific invoice is due
   installmentNumber  Int?      // which installment this is (1-based)
   totalInstallments  Int?      // total installments in the plan
+  amountPaid         Float?    // actual amount the player paid for this invoice
+  creditApplied      Float?    @default(0) // credit from previous overpayment
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 }

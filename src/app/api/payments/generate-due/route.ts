@@ -1,17 +1,13 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// POST /api/payments/generate-due
-// Checks all active monthly payment plans and creates invoices for months
-// that are due (i.e. today >= the plan's due-day for this month) but haven't been created yet.
 export async function POST() {
     try {
         const today = new Date();
         const todayDay = today.getDate();
-        const todayMonth = today.getMonth() + 1; // 1-indexed
+        const todayMonth = today.getMonth() + 1;
         const todayYear = today.getFullYear();
 
-        // Find all monthly payments that have a planId (they belong to a plan)
         const monthlyPayments = await db.payment.findMany({
             where: {
                 paymentType: 'monthly',
@@ -23,19 +19,16 @@ export async function POST() {
             return NextResponse.json({ message: 'Nuk u gjetën planera mujore', created: 0 });
         }
 
-        // Group by planId to get plan metadata
         const plans = new Map<string, typeof monthlyPayments[0]>();
         const existingMonthYearByPlan = new Map<string, Set<string>>();
 
         for (const p of monthlyPayments) {
             if (!p.planId) continue;
 
-            // Track plan metadata (use any invoice to get it, they all share the same plan info)
             if (!plans.has(p.planId)) {
                 plans.set(p.planId, p);
                 existingMonthYearByPlan.set(p.planId, new Set());
             }
-            // Record which month/year invoices already exist for this plan
             existingMonthYearByPlan.get(p.planId)!.add(`${p.year}-${p.month}`);
         }
 
@@ -49,22 +42,19 @@ export async function POST() {
 
             if (!planStart || !planEnd) continue;
 
-            const dueDay = planStart.getDate(); // e.g. 5 if start was the 5th
+            const dueDay = planStart.getDate();
+            const lastDayOfCurrentMonth = new Date(todayYear, todayMonth, 0).getDate();
+            const dueDayForMonth = Math.min(dueDay, lastDayOfCurrentMonth);
 
-            // Only generate if today's day >= the due day for this month
-            if (todayDay < dueDay) continue;
+            if (todayDay < dueDayForMonth) continue;
 
-            // Current month due date
-            const candidateDue = new Date(todayYear, todayMonth - 1, dueDay);
+            const candidateDue = new Date(todayYear, todayMonth - 1, dueDayForMonth);
 
-            // Check: candidate is within plan range
             if (candidateDue < planStart || candidateDue > planEnd) continue;
 
-            // Check: invoice for this month/year doesn't already exist
             const key = `${todayYear}-${todayMonth}`;
             if (existing.has(key)) continue;
 
-            // Determine installment number (how many months since start + 1)
             const monthsSinceStart =
                 (todayYear - planStart.getFullYear()) * 12 +
                 (todayMonth - (planStart.getMonth() + 1));

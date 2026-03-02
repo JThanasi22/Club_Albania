@@ -120,3 +120,45 @@
     @apply bg-background text-foreground;
   }
 }
+
+.toast-with-bg {
+  background: hsl(var(--card)) !important;
+  color: hsl(var(--card-foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+[data-sonner-toaster].toaster-responsive {
+  left: 50% !important;
+  top: 0 !important;
+  transform: translateX(-50%) !important;
+  width: 100% !important;
+  max-width: 356px !important;
+}
+
+@media (min-width: 641px) {
+  [data-sonner-toaster].toaster-responsive {
+    left: auto !important;
+    right: 1rem !important;
+    bottom: 1rem !important;
+    top: auto !important;
+    transform: none !important;
+    width: auto !important;
+    max-width: 356px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  [data-sonner-toaster].toaster-responsive {
+    left: 0 !important;
+    right: 0 !important;
+    top: 0 !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .toast-with-bg {
+    border-radius: 0 !important;
+    width: 100% !important;
+  }
+}

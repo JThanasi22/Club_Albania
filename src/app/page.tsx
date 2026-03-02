@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
@@ -18,7 +20,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Users, TrendingUp, Calendar, Plus, Pencil, Trash2,
   CheckCircle, Clock, AlertCircle, UserPlus, CreditCard, Search,
-  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X
+  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, Check, ChevronsUpDown
 } from 'lucide-react';
 
 // Types
@@ -52,6 +54,8 @@ interface Payment {
   dueDate?: string | null;
   installmentNumber?: number | null;
   totalInstallments?: number | null;
+  amountPaid?: number | null;
+  creditApplied?: number | null;
 }
 
 interface Stats {
@@ -103,6 +107,7 @@ export default function VolleyballTeamManager() {
   const [admin, setAdmin] = useState<AdminUser | null>(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginLoading, setLoginLoading] = useState(false);
+  const [operationInProgress, setOperationInProgress] = useState(false);
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [stats, setStats] = useState<Stats | null>(null);
@@ -119,8 +124,9 @@ export default function VolleyballTeamManager() {
 
   // Filter states
   const [paymentMonthFilter, setPaymentMonthFilter] = useState<string>('all');
-  const [paymentYearFilter, setPaymentYearFilter] = useState<string>(new Date().getFullYear().toString());
+  const [paymentYearFilter, setPaymentYearFilter] = useState<string>('all');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('all');
+  const [paymentPlayerFilter, setPaymentPlayerFilter] = useState<string>('all');
   const [playerSearch, setPlayerSearch] = useState('');
 
   // Photo state
@@ -128,7 +134,9 @@ export default function VolleyballTeamManager() {
   const [photoUploading, setPhotoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Confirmation dialog state
+  const [playerSelectOpen, setPlayerSelectOpen] = useState(false);
+  const [paymentFilterPlayerOpen, setPaymentFilterPlayerOpen] = useState(false);
+
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     title: string;
@@ -136,6 +144,10 @@ export default function VolleyballTeamManager() {
     onConfirm: () => void;
     variant: 'default' | 'destructive';
   }>({ open: false, title: '', description: '', onConfirm: () => {}, variant: 'default' });
+
+  const [installmentPaidModalOpen, setInstallmentPaidModalOpen] = useState(false);
+  const [installmentPaymentForPaid, setInstallmentPaymentForPaid] = useState<(Payment & { player: Player }) | null>(null);
+  const [installmentAmountPaidInput, setInstallmentAmountPaidInput] = useState('');
 
   const showConfirmDialog = (
     title: string,
@@ -162,15 +174,16 @@ export default function VolleyballTeamManager() {
     playerId: '',
     paymentType: 'monthly',
     totalAmount: '5000',
+    monthlyAmountMode: 'perMonth' as 'perMonth' | 'totalPlan',
     startDate: new Date().toISOString().split('T')[0],
     endDate: '',
     installments: '3',
     status: 'pending',
     notes: '',
-    // Legacy fields for edit mode
     month: (new Date().getMonth() + 1).toString(),
     year: new Date().getFullYear().toString(),
     amount: '5000',
+    amountPaid: '',
   });
 
   // Check authentication on mount
@@ -194,6 +207,7 @@ export default function VolleyballTeamManager() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginLoading(true);
+    setOperationInProgress(true);
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -211,8 +225,10 @@ export default function VolleyballTeamManager() {
       }
     } catch {
       toast.error('Hyrja dështoi');
+    } finally {
+      setLoginLoading(false);
+      setOperationInProgress(false);
     }
-    setLoginLoading(false);
   };
 
   const handleLogout = async () => {
@@ -260,6 +276,7 @@ export default function VolleyballTeamManager() {
       if (paymentMonthFilter !== 'all') params.append('month', paymentMonthFilter);
       if (paymentYearFilter !== 'all') params.append('year', paymentYearFilter);
       if (paymentStatusFilter !== 'all') params.append('status', paymentStatusFilter);
+      if (paymentPlayerFilter !== 'all') params.append('playerId', paymentPlayerFilter);
 
       const res = await fetch(`/api/payments?${params.toString()}`);
       const data = await res.json();
@@ -289,13 +306,14 @@ export default function VolleyballTeamManager() {
     if (authenticated) {
       fetchPayments();
     }
-  }, [paymentMonthFilter, paymentYearFilter, paymentStatusFilter, authenticated]);
+  }, [paymentMonthFilter, paymentYearFilter, paymentStatusFilter, paymentPlayerFilter, authenticated]);
 
   // Handle photo upload to Cloudinary
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setPhotoUploading(true);
+      setOperationInProgress(true);
       try {
         const formData = new FormData();
         formData.append('file', file);
@@ -317,6 +335,7 @@ export default function VolleyballTeamManager() {
         toast.error(error instanceof Error ? error.message : 'Ngarkimi i fotos dështoi');
       } finally {
         setPhotoUploading(false);
+        setOperationInProgress(false);
       }
     }
   };
@@ -330,6 +349,7 @@ export default function VolleyballTeamManager() {
 
   // Player CRUD operations
   const handleCreatePlayer = async () => {
+    setOperationInProgress(true);
     try {
       const res = await fetch('/api/players', {
         method: 'POST',
@@ -344,11 +364,14 @@ export default function VolleyballTeamManager() {
       fetchStats();
     } catch {
       toast.error('Shtimi i lojtarit dështoi');
+    } finally {
+      setOperationInProgress(false);
     }
   };
 
   const handleUpdatePlayer = async () => {
     if (!editingPlayer) return;
+    setOperationInProgress(true);
     try {
       const res = await fetch(`/api/players/${editingPlayer.id}`, {
         method: 'PUT',
@@ -367,6 +390,8 @@ export default function VolleyballTeamManager() {
       fetchStats();
     } catch {
       toast.error('Përditësimi i lojtarit dështoi');
+    } finally {
+      setOperationInProgress(false);
     }
   };
 
@@ -375,6 +400,7 @@ export default function VolleyballTeamManager() {
       'Fshi Lojtarin',
       'A jeni të sigurt që doni të fshini këtë lojtar? Të gjitha pagesat e tij do të fshihen gjithashtu.',
       async () => {
+        setOperationInProgress(true);
         try {
           const res = await fetch(`/api/players/${id}`, { method: 'DELETE' });
           if (!res.ok) throw new Error('Failed to delete player');
@@ -383,14 +409,16 @@ export default function VolleyballTeamManager() {
           fetchStats();
         } catch {
           toast.error('Fshirja e lojtarit dështoi');
+        } finally {
+          setOperationInProgress(false);
         }
       },
       'destructive'
     );
   };
 
-  // Payment CRUD operations
   const handleCreatePayment = async () => {
+    setOperationInProgress(true);
     try {
       const payload = editingPayment
         ? {
@@ -400,16 +428,22 @@ export default function VolleyballTeamManager() {
           status: paymentForm.status,
           notes: paymentForm.notes,
         }
-        : {
-          playerId: paymentForm.playerId,
-          paymentType: paymentForm.paymentType,
-          totalAmount: paymentForm.totalAmount,
-          startDate: paymentForm.startDate,
-          endDate: paymentForm.endDate,
-          installments: paymentForm.installments,
-          status: paymentForm.status,
-          notes: paymentForm.notes,
-        };
+        : (() => {
+          const base = {
+            playerId: paymentForm.playerId,
+            paymentType: paymentForm.paymentType,
+            startDate: paymentForm.startDate,
+            endDate: paymentForm.endDate,
+            installments: paymentForm.installments,
+            status: paymentForm.status,
+            notes: paymentForm.notes,
+          };
+
+          if (paymentForm.paymentType === 'monthly' && paymentForm.monthlyAmountMode === 'totalPlan') {
+            return { ...base, totalPlanAmount: paymentForm.totalAmount };
+          }
+          return { ...base, totalAmount: paymentForm.totalAmount };
+        })();
 
       const res = await fetch('/api/payments', {
         method: 'POST',
@@ -420,12 +454,7 @@ export default function VolleyballTeamManager() {
       if (!res.ok) throw new Error(data.error || 'Failed to create payment');
 
       const count = data.count ?? 1;
-      const totalPlanned = data.totalPlanned;
-      if (totalPlanned && totalPlanned > 1) {
-        toast.success(`Plani u krijua: fatura e parë u shtua (${totalPlanned} fatura gjithsej)`);
-      } else {
-        toast.success(`${count} faturë u shtua me sukses`);
-      }
+      toast.success(`${count} faturë u shtua me sukses`);
       setPaymentDialogOpen(false);
       resetPaymentForm();
       fetchPayments();
@@ -433,26 +462,38 @@ export default function VolleyballTeamManager() {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Shtimi i pagesës dështoi';
       toast.error(message);
+    } finally {
+      setOperationInProgress(false);
     }
   };
 
   const handleUpdatePayment = async () => {
     if (!editingPayment) return;
+    setOperationInProgress(true);
     try {
+      const updatePayload: Record<string, unknown> = {
+        amount: paymentForm.amount,
+        status: paymentForm.status,
+        notes: paymentForm.notes,
+      };
       const res = await fetch(`/api/payments/${editingPayment.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(paymentForm),
+        body: JSON.stringify(updatePayload),
       });
-      if (!res.ok) throw new Error('Failed to update payment');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Përditësimi i pagesës dështoi');
       toast.success('Pagesa u përditësua me sukses');
       setPaymentDialogOpen(false);
       setEditingPayment(null);
       resetPaymentForm();
       fetchPayments();
       fetchStats();
-    } catch {
-      toast.error('Përditësimi i pagesës dështoi');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Përditësimi i pagesës dështoi';
+      toast.error(message);
+    } finally {
+      setOperationInProgress(false);
     }
   };
 
@@ -461,6 +502,7 @@ export default function VolleyballTeamManager() {
       'Fshi Pagesën',
       'A jeni të sigurt që doni të fshini këtë pagesë?',
       async () => {
+        setOperationInProgress(true);
         try {
           const res = await fetch(`/api/payments/${id}`, { method: 'DELETE' });
           if (!res.ok) throw new Error('Failed to delete payment');
@@ -469,14 +511,16 @@ export default function VolleyballTeamManager() {
           fetchStats();
         } catch {
           toast.error('Fshirja e pagesës dështoi');
+        } finally {
+          setOperationInProgress(false);
         }
       },
       'destructive'
     );
   };
 
-  // Mark payment as paid
   const handleMarkAsPaid = async (payment: Payment) => {
+    setOperationInProgress(true);
     try {
       const res = await fetch(`/api/payments/${payment.id}`, {
         method: 'PUT',
@@ -489,6 +533,51 @@ export default function VolleyballTeamManager() {
       fetchStats();
     } catch {
       toast.error('Përditësimi i pagesës dështoi');
+    } finally {
+      setOperationInProgress(false);
+    }
+  };
+
+  const onMarkAsPaidClick = (payment: Payment & { player: Player }) => {
+    if (payment.paymentType === 'installment') {
+      setInstallmentPaymentForPaid(payment);
+      setInstallmentAmountPaidInput('');
+      setInstallmentPaidModalOpen(true);
+    } else {
+      handleMarkAsPaid(payment);
+    }
+  };
+
+  const getInstallmentDueAmount = (p: Payment) => p.amount - (p.creditApplied ?? 0);
+
+  const handleSubmitInstallmentPaid = async () => {
+    if (!installmentPaymentForPaid) return;
+    const paid = parseFloat(installmentAmountPaidInput.replace(/,/g, '.'));
+    if (isNaN(paid) || paid < 0) {
+      toast.error('Vendosni një shumë të vlefshme');
+      return;
+    }
+    setOperationInProgress(true);
+    try {
+      const res = await fetch(`/api/payments/${installmentPaymentForPaid.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...installmentPaymentForPaid, amountPaid: paid }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to update payment');
+      }
+      toast.success('Pagesa u përditësua');
+      setInstallmentPaidModalOpen(false);
+      setInstallmentPaymentForPaid(null);
+      setInstallmentAmountPaidInput('');
+      fetchPayments();
+      fetchStats();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Përditësimi i pagesës dështoi');
+    } finally {
+      setOperationInProgress(false);
     }
   };
 
@@ -514,6 +603,7 @@ export default function VolleyballTeamManager() {
       playerId: '',
       paymentType: 'monthly',
       totalAmount: '5000',
+      monthlyAmountMode: 'perMonth',
       startDate: new Date().toISOString().split('T')[0],
       endDate: '',
       installments: '3',
@@ -522,6 +612,7 @@ export default function VolleyballTeamManager() {
       month: (new Date().getMonth() + 1).toString(),
       year: new Date().getFullYear().toString(),
       amount: '5000',
+      amountPaid: '',
     });
   };
 
@@ -547,6 +638,7 @@ export default function VolleyballTeamManager() {
       playerId: payment.playerId,
       paymentType: payment.paymentType || 'monthly',
       totalAmount: payment.amount.toString(),
+      monthlyAmountMode: 'perMonth',
       startDate: payment.dueDate
         ? new Date(payment.dueDate).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0],
@@ -559,6 +651,7 @@ export default function VolleyballTeamManager() {
       month: payment.month.toString(),
       year: payment.year.toString(),
       amount: payment.amount.toString(),
+      amountPaid: '',
     });
     setPaymentDialogOpen(true);
   };
@@ -629,18 +722,24 @@ export default function VolleyballTeamManager() {
     );
   }
 
-  // Login page
   if (!authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100 dark:from-gray-900 dark:to-gray-800 p-4">
-        {/* Theme Toggle - Top Right */}
+        {(loginLoading || operationInProgress) && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-background/80 backdrop-blur-sm" aria-hidden="true">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
+              <p className="text-lg font-medium text-foreground">Po ngarkohet...</p>
+            </div>
+          </div>
+        )}
         <div className="absolute top-4 right-4">
           <ThemeToggle />
         </div>
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-4 w-16 h-16 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center">
-              <Volleyball className="w-10 h-10 text-orange-500 animate-spin-slow" />
+            <div className="mx-auto mb-4 w-16 h-16 rounded-full overflow-hidden flex items-center justify-center bg-white ring-2 ring-gray-200 dark:ring-gray-600">
+              <img src="/logo-club-albania.png" alt="Club Albania" className="w-full h-full object-contain" />
             </div>
             <CardTitle className="text-2xl h-10 flex items-center justify-center overflow-hidden">
               <AnimatedText text="Club Albania Manager Portal" />
@@ -716,13 +815,22 @@ export default function VolleyballTeamManager() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
+    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+      {operationInProgress && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-background/80 backdrop-blur-sm pointer-events-auto" aria-hidden="true">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
+            <p className="text-lg font-medium text-foreground">Po ngarkohet...</p>
+          </div>
+        </div>
+      )}
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-3">
-              <Volleyball className="w-8 h-8 sm:w-10 sm:h-10 text-orange-500" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden flex-shrink-0 bg-white ring-2 ring-gray-200 dark:ring-gray-600">
+                <img src="/logo-club-albania.png" alt="Club Albania" className="w-full h-full object-contain" />
+              </div>
               <div className="min-w-0">
                 <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 dark:text-white truncate">Club Albania Manager Portal</h1>
                 <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 hidden sm:block">Mirë se vini, {admin?.name || admin?.username}</p>
@@ -744,7 +852,7 @@ export default function VolleyballTeamManager() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-3 mb-4 sm:mb-6 h-auto">
             <TabsTrigger value="dashboard" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
@@ -1088,7 +1196,59 @@ export default function VolleyballTeamManager() {
                     <CardDescription>Ndjekni statusin e pagesave mujore</CardDescription>
                   </div>
                   <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2">
-                    <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:gap-2">
+                      <Popover open={paymentFilterPlayerOpen} onOpenChange={setPaymentFilterPlayerOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={paymentFilterPlayerOpen}
+                            className="w-full sm:w-40 justify-between font-normal h-9"
+                          >
+                            {paymentPlayerFilter === 'all'
+                              ? 'Të gjithë lojtarët'
+                              : (() => {
+                                  const p = players.find(x => x.id === paymentPlayerFilter);
+                                  return p ? `${p.name}${p.jerseyNumber ? ` (#${p.jerseyNumber})` : ''}` : 'Lojtari';
+                                })()}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Kërko lojtar..." />
+                            <CommandList className="max-h-[180px]">
+                              <CommandEmpty>Nuk u gjet lojtar.</CommandEmpty>
+                              <CommandGroup>
+                                <CommandItem
+                                  value="të gjithë lojtarët all"
+                                  onSelect={() => {
+                                    setPaymentPlayerFilter('all');
+                                    setPaymentFilterPlayerOpen(false);
+                                  }}
+                                >
+                                  <Check className={`mr-2 h-4 w-4 ${paymentPlayerFilter === 'all' ? 'opacity-100' : 'opacity-0'}`} />
+                                  Të gjithë lojtarët
+                                </CommandItem>
+                                {players.map((player) => (
+                                  <CommandItem
+                                    key={player.id}
+                                    value={`${player.name} ${player.jerseyNumber ?? ''} ${player.team ?? ''}`}
+                                    onSelect={() => {
+                                      setPaymentPlayerFilter(player.id);
+                                      setPaymentFilterPlayerOpen(false);
+                                    }}
+                                  >
+                                    <Check className={`mr-2 h-4 w-4 ${paymentPlayerFilter === player.id ? 'opacity-100' : 'opacity-0'}`} />
+                                    {player.name} {player.jerseyNumber ? `(#${player.jerseyNumber})` : ''} {player.team ? ` · ${player.team}` : ''}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                       <Select value={paymentMonthFilter} onValueChange={setPaymentMonthFilter}>
                         <SelectTrigger className="w-full sm:w-32">
                           <SelectValue placeholder="Muaji" />
@@ -1136,6 +1296,7 @@ export default function VolleyballTeamManager() {
                         variant="outline"
                         className="flex-1 sm:flex-initial"
                         onClick={async () => {
+                          setOperationInProgress(true);
                           try {
                             const res = await fetch('/api/payments/generate-due', { method: 'POST' });
                             const data = await res.json();
@@ -1145,6 +1306,8 @@ export default function VolleyballTeamManager() {
                             fetchStats();
                           } catch {
                             toast.error('Gjenerimi i faturave dështoi');
+                          } finally {
+                            setOperationInProgress(false);
                           }
                         }}
                       >
@@ -1196,7 +1359,15 @@ export default function VolleyballTeamManager() {
                                 <Badge variant="outline" className="text-xs">Mujore</Badge>
                               )}
                             </div>
-                            <div className="font-bold text-lg">{formatCurrency(payment.amount)}</div>
+                            <div className="text-right">
+                              <div className="font-bold text-lg">{formatCurrency(payment.amount)}</div>
+                              {payment.paymentType === 'installment' && (payment.amountPaid != null || (payment.creditApplied ?? 0) > 0) && (
+                                <div className="text-xs text-gray-500">
+                                  {(payment.creditApplied ?? 0) > 0 && <span className="text-green-600">Kredi: {formatCurrency(payment.creditApplied!)}</span>}
+                                  {payment.amountPaid != null && <span className="ml-1">Paguar: {formatCurrency(payment.amountPaid)}</span>}
+                                </div>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700">
                             <span className="text-xs text-gray-500">
@@ -1204,7 +1375,7 @@ export default function VolleyballTeamManager() {
                             </span>
                             <div className="flex gap-2">
                               {payment.status !== 'paid' && (
-                                <Button size="sm" variant="outline" className="text-green-600" onClick={() => handleMarkAsPaid(payment)}>
+                                <Button size="sm" variant="outline" className="text-green-600" onClick={() => onMarkAsPaidClick(payment)}>
                                   <CheckCircle className="w-4 h-4 mr-1" /> Paguar
                                 </Button>
                               )}
@@ -1262,7 +1433,15 @@ export default function VolleyballTeamManager() {
                                 </Badge>
                               )}
                             </TableCell>
-                            <TableCell className="font-semibold">{formatCurrency(payment.amount)}</TableCell>
+                            <TableCell>
+                              <div className="font-semibold">{formatCurrency(payment.amount)}</div>
+                              {payment.paymentType === 'installment' && (payment.amountPaid != null || (payment.creditApplied ?? 0) > 0) && (
+                                <div className="text-xs text-gray-500">
+                                  {(payment.creditApplied ?? 0) > 0 && <span className="text-green-600">Kredi: {formatCurrency(payment.creditApplied!)}</span>}
+                                  {payment.amountPaid != null && <span className="ml-1">Paguar: {formatCurrency(payment.amountPaid)}</span>}
+                                </div>
+                              )}
+                            </TableCell>
                             <TableCell>{getStatusBadge(payment.status)}</TableCell>
                             <TableCell>
                               {payment.dueDate
@@ -1278,7 +1457,7 @@ export default function VolleyballTeamManager() {
                                     size="sm"
                                     variant="outline"
                                     className="text-green-600 hover:text-green-700"
-                                    onClick={() => handleMarkAsPaid(payment)}
+                                    onClick={() => onMarkAsPaidClick(payment)}
                                   >
                                     <CheckCircle className="w-4 h-4 mr-1" />
                                     Shëno Paguar
@@ -1484,7 +1663,7 @@ export default function VolleyballTeamManager() {
       </Dialog>
 
       {/* Payment Dialog */}
-      <Dialog open={paymentDialogOpen} onOpenChange={(open) => { setPaymentDialogOpen(open); if (!open) { setEditingPayment(null); resetPaymentForm(); } }}>
+      <Dialog open={paymentDialogOpen} onOpenChange={(open) => { setPaymentDialogOpen(open); if (!open) { setEditingPayment(null); setPlayerSelectOpen(false); resetPaymentForm(); } }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingPayment ? 'Përditëso Faturën' : 'Shto Pagesë të Re'}</DialogTitle>
@@ -1497,7 +1676,6 @@ export default function VolleyballTeamManager() {
 
           <div className="space-y-4 py-4">
 
-            {/* ── EDIT MODE: simple per-invoice fields ── */}
             {editingPayment ? (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1541,18 +1719,48 @@ export default function VolleyballTeamManager() {
                 {/* Player selector */}
                 <div className="space-y-2">
                   <Label htmlFor="playerId">Lojtari *</Label>
-                  <Select value={paymentForm.playerId} onValueChange={(value) => setPaymentForm({ ...paymentForm, playerId: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Zgjidhni lojtarin" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {players.filter(p => p.active).map((player) => (
-                        <SelectItem key={player.id} value={player.id}>
-                          {player.name} {player.jerseyNumber ? `(#${player.jerseyNumber})` : ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={playerSelectOpen} onOpenChange={setPlayerSelectOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={playerSelectOpen}
+                        className="w-full justify-between font-normal h-9"
+                      >
+                        {paymentForm.playerId
+                          ? (() => {
+                              const p = players.find(x => x.id === paymentForm.playerId);
+                              return p ? `${p.name}${p.jerseyNumber ? ` (#${p.jerseyNumber})` : ''}` : 'Zgjidhni lojtarin';
+                            })()
+                          : 'Zgjidhni lojtarin'}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Kërko lojtar..." />
+                        <CommandList className="max-h-[180px]">
+                          <CommandEmpty>Nuk u gjet lojtar.</CommandEmpty>
+                          <CommandGroup>
+                            {players.filter(p => p.active).map((player) => (
+                              <CommandItem
+                                key={player.id}
+                                value={`${player.name} ${player.jerseyNumber ?? ''} ${player.team ?? ''}`}
+                                onSelect={() => {
+                                  setPaymentForm({ ...paymentForm, playerId: player.id });
+                                  setPlayerSelectOpen(false);
+                                }}
+                              >
+                                <Check className={`mr-2 h-4 w-4 ${paymentForm.playerId === player.id ? 'opacity-100' : 'opacity-0'}`} />
+                                {player.name} {player.jerseyNumber ? `(#${player.jerseyNumber})` : ''} {player.team ? ` · ${player.team}` : ''}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 {/* Payment type toggle */}
@@ -1625,17 +1833,48 @@ export default function VolleyballTeamManager() {
                   </div>
                 )}
 
-                {/* Total amount + per-invoice preview */}
+                {paymentForm.paymentType === 'monthly' && (
+                  <div className="space-y-2">
+                    <Label>Mënyra e Shumës</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentForm({ ...paymentForm, monthlyAmountMode: 'perMonth' })}
+                        className={`py-2 px-3 rounded-lg border-2 text-xs font-medium transition-all ${paymentForm.monthlyAmountMode === 'perMonth'
+                          ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                          }`}
+                      >
+                        Çmimi për muaj
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentForm({ ...paymentForm, monthlyAmountMode: 'totalPlan' })}
+                        className={`py-2 px-3 rounded-lg border-2 text-xs font-medium transition-all ${paymentForm.monthlyAmountMode === 'totalPlan'
+                          ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                          }`}
+                      >
+                        Shuma totale e planit
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="totalAmount">Shuma Totale (ALL) *</Label>
+                    <Label htmlFor="totalAmount">
+                      {paymentForm.paymentType === 'monthly'
+                        ? (paymentForm.monthlyAmountMode === 'perMonth' ? 'Çmimi për Muaj (ALL) *' : 'Shuma Totale e Planit (ALL) *')
+                        : 'Shuma Totale (ALL) *'}
+                    </Label>
                     <Input
                       id="totalAmount"
                       type="number"
                       step="100"
                       value={paymentForm.totalAmount}
                       onChange={(e) => setPaymentForm({ ...paymentForm, totalAmount: e.target.value })}
-                      placeholder="15000"
+                      placeholder={paymentForm.paymentType === 'monthly' && paymentForm.monthlyAmountMode === 'perMonth' ? '5000' : '15000'}
                     />
                   </div>
                   <div className="space-y-2">
@@ -1651,7 +1890,6 @@ export default function VolleyballTeamManager() {
                   </div>
                 </div>
 
-                {/* Invoice preview badge */}
                 {(() => {
                   let invoiceCount = 0;
                   let perInvoice = 0;
@@ -1666,8 +1904,13 @@ export default function VolleyballTeamManager() {
                     const end = new Date(paymentForm.endDate);
                     const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
                     invoiceCount = Math.max(0, months);
-                    perInvoice = parseFloat(paymentForm.totalAmount) || 0;
-                    previewNote = invoiceCount > 1 ? `Vetëm fatura e parë krijohet tani, të tjerat çdo muaj` : '';
+                    if (paymentForm.monthlyAmountMode === 'totalPlan') {
+                      const total = parseFloat(paymentForm.totalAmount) || 0;
+                      perInvoice = invoiceCount > 0 ? Math.round((total / invoiceCount) * 100) / 100 : 0;
+                    } else {
+                      perInvoice = parseFloat(paymentForm.totalAmount) || 0;
+                    }
+                    previewNote = `Të gjitha ${invoiceCount} faturat krijohen menjëherë`;
                   }
 
                   if (invoiceCount <= 0 || !paymentForm.totalAmount) return null;
@@ -1786,6 +2029,83 @@ export default function VolleyballTeamManager() {
         onConfirm={confirmDialog.onConfirm}
         variant={confirmDialog.variant}
       />
+
+      <Dialog
+        open={installmentPaidModalOpen}
+        onOpenChange={(open) => {
+          setInstallmentPaidModalOpen(open);
+          if (!open) {
+            setInstallmentPaymentForPaid(null);
+            setInstallmentAmountPaidInput('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Shëno shumën e paguar (këst)</DialogTitle>
+            <DialogDescription>
+              {installmentPaymentForPaid && (
+                <>
+                  {installmentPaymentForPaid.player?.name || 'I panjohur'} – {installmentPaymentForPaid.installmentNumber != null && installmentPaymentForPaid.totalInstallments != null
+                    ? `Këst ${installmentPaymentForPaid.installmentNumber}/${installmentPaymentForPaid.totalInstallments}`
+                    : ''}. Shuma e mbetur: {formatCurrency(getInstallmentDueAmount(installmentPaymentForPaid))}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="installment-amount-paid">Shuma e paguar (ALL)</Label>
+              <Input
+                id="installment-amount-paid"
+                type="number"
+                min={0}
+                step={1}
+                value={installmentAmountPaidInput}
+                onChange={(e) => setInstallmentAmountPaidInput(e.target.value)}
+                placeholder="0"
+              />
+              {installmentPaymentForPaid && (() => {
+                const credit = installmentPaymentForPaid.creditApplied ?? 0;
+                const due = getInstallmentDueAmount(installmentPaymentForPaid);
+                const paid = parseFloat(installmentAmountPaidInput.replace(/,/g, '.')) || 0;
+                const remaining = due - paid;
+                return (
+                  <div className="text-xs space-y-1 p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                    {credit > 0 && <div className="text-green-600">Kredi e aplikuar: {formatCurrency(credit)}</div>}
+                    <div>Shuma e faturës: {formatCurrency(due)}</div>
+                    {paid > 0 && (
+                      remaining > 0
+                        ? <div className="text-yellow-600">Mbetja: {formatCurrency(remaining)}</div>
+                        : remaining < 0
+                          ? <div className="text-blue-600">Tepricë: {formatCurrency(Math.abs(remaining))} (do të aplikohet tek fatura tjetër)</div>
+                          : <div className="text-green-600">Paguar plotësisht</div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+            {installmentPaymentForPaid && (
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full"
+                onClick={() => setInstallmentAmountPaidInput(String(getInstallmentDueAmount(installmentPaymentForPaid)))}
+              >
+                Paguaj të gjithë shumën ({formatCurrency(getInstallmentDueAmount(installmentPaymentForPaid))})
+              </Button>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInstallmentPaidModalOpen(false)}>
+              Anulo
+            </Button>
+            <Button onClick={handleSubmitInstallmentPaid} disabled={!installmentAmountPaidInput.trim()}>
+              Shëno Paguar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Footer */}
       <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-auto">
