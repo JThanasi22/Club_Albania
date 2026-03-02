@@ -22,6 +22,8 @@ import {
   CheckCircle, Clock, AlertCircle, UserPlus, CreditCard, Search,
   Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, Check, ChevronsUpDown
 } from 'lucide-react';
+import { format, parse } from 'date-fns';
+import { Calendar as DatePicker } from '@/components/ui/calendar';
 
 // Types
 interface Player {
@@ -69,13 +71,21 @@ interface Stats {
     collectionRate: number;
     amountCollected: number;
   };
+  allTime: {
+    paid: number;
+    pending: number;
+    overdue: number;
+    totalExpected: number;
+    collectionRate: number;
+    amountCollected: number;
+  };
   overall: {
     totalPaid: number;
     totalPending: number;
     totalOverdue: number;
   };
   recentPayments: (Payment & { player: Player })[];
-  playersNotPaidThisMonth: Player[];
+  playersWithUnpaidBills: Player[];
 }
 
 interface AdminUser {
@@ -102,6 +112,31 @@ const formatCurrency = (amount: number) => {
   }).format(amount) + ' ALL';
 };
 
+const formatDateDDMMYYYY = (isoDate: string) => {
+  if (!isoDate) return '';
+  try {
+    const d = parse(isoDate, 'yyyy-MM-dd', new Date());
+    return format(d, 'dd/MM/yyyy');
+  } catch {
+    return isoDate;
+  }
+};
+
+const SHORTCUT_START = '2025-09-01';
+const SHORTCUT_END = '2026-06-30';
+
+const getPlayerPaymentSummary = (player: Player) => {
+  const payments = player.payments ?? [];
+  const totalBills = payments.reduce((sum, p) => sum + p.amount, 0);
+  const amountPaid = payments.reduce((sum, p) => {
+    if (p.amountPaid != null) return sum + p.amountPaid;
+    if (p.status === 'paid') return sum + p.amount;
+    return sum;
+  }, 0);
+  const amountLeft = totalBills - amountPaid;
+  return { totalBills, amountPaid, amountLeft };
+};
+
 export default function VolleyballTeamManager() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [admin, setAdmin] = useState<AdminUser | null>(null);
@@ -118,6 +153,9 @@ export default function VolleyballTeamManager() {
   // Form states
   const [playerDialogOpen, setPlayerDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [startDatePickerOpen, setStartDatePickerOpen] = useState(false);
+  const [endDatePickerOpen, setEndDatePickerOpen] = useState(false);
+  const [installmentDatePickerOpen, setInstallmentDatePickerOpen] = useState<number | null>(null);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
   const [viewingPlayer, setViewingPlayer] = useState<Player | null>(null);
@@ -178,6 +216,7 @@ export default function VolleyballTeamManager() {
     startDate: new Date().toISOString().split('T')[0],
     endDate: '',
     installments: '3',
+    installmentConfig: [] as { endDate: string }[],
     status: 'pending',
     notes: '',
     month: (new Date().getMonth() + 1).toString(),
@@ -185,6 +224,37 @@ export default function VolleyballTeamManager() {
     amount: '5000',
     amountPaid: '',
   });
+
+  useEffect(() => {
+    if (paymentForm.paymentType !== 'installment' || !paymentForm.startDate || !paymentForm.endDate) {
+      if (paymentForm.installmentConfig.length > 0) {
+        setPaymentForm(p => ({ ...p, installmentConfig: [] }));
+      }
+      return;
+    }
+    const n = parseInt(paymentForm.installments) || 0;
+    if (n < 1) return;
+    const start = parse(paymentForm.startDate, 'yyyy-MM-dd', new Date());
+    const end = parse(paymentForm.endDate, 'yyyy-MM-dd', new Date());
+    if (end <= start) return;
+    setPaymentForm(p => {
+      const current = p.installmentConfig;
+      const cfg: { endDate: string }[] = [];
+      for (let i = 0; i < n; i++) {
+        if (i < current.length) {
+          const d = parse(current[i].endDate, 'yyyy-MM-dd', new Date());
+          const clamped = d < start ? start : d > end ? end : d;
+          cfg.push({ endDate: format(clamped, 'yyyy-MM-dd') });
+        } else {
+          const fraction = (i + 1) / n;
+          const d = new Date(start.getTime() + fraction * (end.getTime() - start.getTime()));
+          cfg.push({ endDate: format(d, 'yyyy-MM-dd') });
+        }
+      }
+      if (cfg.length === current.length && cfg.every((c, i) => c.endDate === current[i]?.endDate)) return p;
+      return { ...p, installmentConfig: cfg };
+    });
+  }, [paymentForm.paymentType, paymentForm.startDate, paymentForm.endDate, paymentForm.installments]);
 
   // Check authentication on mount
   useEffect(() => {
@@ -438,7 +508,9 @@ export default function VolleyballTeamManager() {
             status: paymentForm.status,
             notes: paymentForm.notes,
           };
-
+          if (paymentForm.paymentType === 'installment' && paymentForm.installmentConfig.length > 0) {
+            return { ...base, totalAmount: paymentForm.totalAmount, installmentDueDates: paymentForm.installmentConfig.map(c => c.endDate) };
+          }
           if (paymentForm.paymentType === 'monthly' && paymentForm.monthlyAmountMode === 'totalPlan') {
             return { ...base, totalPlanAmount: paymentForm.totalAmount };
           }
@@ -539,6 +611,7 @@ export default function VolleyballTeamManager() {
   };
 
   const onMarkAsPaidClick = (payment: Payment & { player: Player }) => {
+    if (!canMarkAsPaid(payment, payments)) return;
     if (payment.paymentType === 'installment') {
       setInstallmentPaymentForPaid(payment);
       setInstallmentAmountPaidInput('');
@@ -549,6 +622,14 @@ export default function VolleyballTeamManager() {
   };
 
   const getInstallmentDueAmount = (p: Payment) => p.amount - (p.creditApplied ?? 0);
+
+  const canMarkAsPaid = (payment: Payment & { player?: Player }, allPayments: (Payment & { player: Player })[]) => {
+    if (!payment.planId || !payment.installmentNumber || payment.installmentNumber <= 1) return true;
+    const prev = allPayments.find(
+      p => p.planId === payment.planId && p.installmentNumber === payment.installmentNumber - 1
+    );
+    return prev ? prev.status === 'paid' : false;
+  };
 
   const handleSubmitInstallmentPaid = async () => {
     if (!installmentPaymentForPaid) return;
@@ -607,6 +688,7 @@ export default function VolleyballTeamManager() {
       startDate: new Date().toISOString().split('T')[0],
       endDate: '',
       installments: '3',
+      installmentConfig: [],
       status: 'pending',
       notes: '',
       month: (new Date().getMonth() + 1).toString(),
@@ -646,6 +728,7 @@ export default function VolleyballTeamManager() {
         ? new Date(payment.planEndDate).toISOString().split('T')[0]
         : '',
       installments: payment.totalInstallments?.toString() || '3',
+      installmentConfig: [],
       status: payment.status,
       notes: payment.notes || '',
       month: payment.month.toString(),
@@ -891,20 +974,20 @@ export default function VolleyballTeamManager() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                    {stats?.currentMonth.collectionRate.toFixed(0) || 0}%
+                    {stats?.allTime.collectionRate.toFixed(0) || 0}%
                   </div>
-                  <Progress value={stats?.currentMonth.collectionRate || 0} className="mt-2 h-2" />
+                  <Progress value={stats?.allTime.collectionRate || 0} className="mt-2 h-2" />
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">Këtë Muaj</CardTitle>
+                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">Gjithsej</CardTitle>
                   <Calendar className="w-5 h-5 text-orange-500" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                    {stats?.currentMonth.paid || 0}/{stats?.currentMonth.totalExpected || 0}
+                    {stats?.allTime.paid || 0}/{stats?.allTime.totalExpected || 0}
                   </div>
                   <p className="text-xs text-gray-500 mt-1">Pagesa të arkëtuara</p>
                 </CardContent>
@@ -917,38 +1000,38 @@ export default function VolleyballTeamManager() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-xl font-bold text-gray-900 dark:text-white">
-                    {formatCurrency(stats?.currentMonth.amountCollected || 0)}
+                    {formatCurrency(stats?.allTime.amountCollected || 0)}
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">Këtë muaj</p>
+                  <p className="text-xs text-gray-500 mt-1">Gjithsej</p>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Current Month Status */}
+            {/* All Time Status */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Calendar className="w-5 h-5" />
-                  Statusi i Pagesave - {MONTHS[(stats?.currentMonth.month || 1) - 1]} {stats?.currentMonth.year}
+                  Statusi i Pagesave - Të gjitha kohët
                 </CardTitle>
-                <CardDescription>Përmbledhje e arkëtimit të pagesave këtë muaj</CardDescription>
+                <CardDescription>Përmbledhje e arkëtimit të pagesave gjithsej</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
                   <div className="text-center p-2 sm:p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
                     <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8 mx-auto text-green-500 mb-1 sm:mb-2" />
-                    <div className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">{stats?.currentMonth.paid || 0}</div>
+                    <div className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">{stats?.allTime.paid || 0}</div>
                     <div className="text-xs sm:text-sm text-gray-500">Paguar</div>
                   </div>
                   <div className="text-center p-2 sm:p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
                     <Clock className="w-6 h-6 sm:w-8 sm:h-8 mx-auto text-yellow-500 mb-1 sm:mb-2" />
-                    <div className="text-xl sm:text-2xl font-bold text-yellow-600 dark:text-yellow-400">{stats?.currentMonth.pending || 0}</div>
+                    <div className="text-xl sm:text-2xl font-bold text-yellow-600 dark:text-yellow-400">{stats?.allTime.pending || 0}</div>
                     <div className="text-xs sm:text-sm text-gray-500">Në pritje</div>
                   </div>
                   <div className="text-center p-2 sm:p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
                     <AlertCircle className="w-6 h-6 sm:w-8 sm:h-8 mx-auto text-red-500 mb-1 sm:mb-2" />
-                    <div className="text-xl sm:text-2xl font-bold text-red-600 dark:text-red-400">{(stats?.currentMonth.totalExpected || 0) - (stats?.currentMonth.paid || 0) - (stats?.currentMonth.pending || 0)}</div>
-                    <div className="text-xs sm:text-sm text-gray-500">Pa filluar</div>
+                    <div className="text-xl sm:text-2xl font-bold text-red-600 dark:text-red-400">{stats?.allTime.overdue || 0}</div>
+                    <div className="text-xs sm:text-sm text-gray-500">Vonuar</div>
                   </div>
                 </div>
               </CardContent>
@@ -996,17 +1079,17 @@ export default function VolleyballTeamManager() {
               <Card>
                 <CardHeader>
                   <CardTitle>Pagesat e Papaguara</CardTitle>
-                  <CardDescription>Lojtarët që nuk kanë paguar këtë muaj</CardDescription>
+                  <CardDescription>Lojtarët me fatura të papaguara (në pritje ose vonuar)</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {!stats?.playersNotPaidThisMonth || stats.playersNotPaidThisMonth.length === 0 ? (
+                  {!stats?.playersWithUnpaidBills || stats.playersWithUnpaidBills.length === 0 ? (
                     <div className="text-center py-8">
                       <CheckCircle className="w-12 h-12 mx-auto text-green-500 mb-2" />
-                      <p className="text-gray-500">Të gjithë lojtarët kanë paguar këtë muaj!</p>
+                      <p className="text-gray-500">Nuk ka lojtarë me fatura të papaguara</p>
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {stats.playersNotPaidThisMonth.map((player) => (
+                      {stats.playersWithUnpaidBills.map((player) => (
                         <div key={player.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                           <div className="flex items-center gap-3">
                             {getPlayerAvatar(player, 'md')}
@@ -1097,6 +1180,21 @@ export default function VolleyballTeamManager() {
                                 {player.email && <p className="truncate">✉️ {player.email}</p>}
                                 {player.phone && <p>📞 {player.phone}</p>}
                               </div>
+                              {(() => {
+                                const { totalBills, amountPaid, amountLeft } = getPlayerPaymentSummary(player);
+                                return (
+                                  <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 text-xs space-y-0.5">
+                                    <p><span className="text-gray-500">Totali:</span> {formatCurrency(totalBills)}</p>
+                                    <p><span className="text-gray-500">Paguar:</span> {formatCurrency(amountPaid)}</p>
+                                    <p>
+                                      <span className="text-gray-500">{amountLeft <= 0 ? 'Tejpagim:' : 'Mbetur:'}</span>{' '}
+                                      <span className={amountLeft <= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                                        {formatCurrency(Math.abs(amountLeft))}
+                                      </span>
+                                    </p>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                           <div className="flex justify-end gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
@@ -1123,6 +1221,7 @@ export default function VolleyballTeamManager() {
                           <TableHead>Ekipi</TableHead>
                           <TableHead>Numri</TableHead>
                           <TableHead>Kontakti</TableHead>
+                          <TableHead>Faturat</TableHead>
                           <TableHead>Statusi</TableHead>
                           <TableHead className="text-right">Veprimet</TableHead>
                         </TableRow>
@@ -1143,6 +1242,23 @@ export default function VolleyballTeamManager() {
                                 <div>{player.email || '-'}</div>
                                 <div className="text-gray-500">{player.phone || ''}</div>
                               </div>
+                            </TableCell>
+                            <TableCell>
+                              {(() => {
+                                const { totalBills, amountPaid, amountLeft } = getPlayerPaymentSummary(player);
+                                return (
+                                  <div className="text-sm min-w-[140px]">
+                                    <div><span className="text-gray-500">Totali:</span> {formatCurrency(totalBills)}</div>
+                                    <div><span className="text-gray-500">Paguar:</span> {formatCurrency(amountPaid)}</div>
+                                    <div>
+                                      <span className="text-gray-500">{amountLeft <= 0 ? 'Tejpagim:' : 'Mbetur:'}</span>{' '}
+                                      <span className={amountLeft <= 0 ? 'text-green-600 dark:text-green-400 font-medium' : 'text-red-600 dark:text-red-400 font-medium'}>
+                                        {formatCurrency(Math.abs(amountLeft))}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </TableCell>
                             <TableCell>
                               <Badge variant={player.active ? 'default' : 'secondary'}>
@@ -1375,7 +1491,13 @@ export default function VolleyballTeamManager() {
                             </span>
                             <div className="flex gap-2">
                               {payment.status !== 'paid' && (
-                                <Button size="sm" variant="outline" className="text-green-600" onClick={() => onMarkAsPaidClick(payment)}>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-green-600"
+                                  disabled={!canMarkAsPaid(payment, payments)}
+                                  onClick={() => onMarkAsPaidClick(payment)}
+                                >
                                   <CheckCircle className="w-4 h-4 mr-1" /> Paguar
                                 </Button>
                               )}
@@ -1457,6 +1579,7 @@ export default function VolleyballTeamManager() {
                                     size="sm"
                                     variant="outline"
                                     className="text-green-600 hover:text-green-700"
+                                    disabled={!canMarkAsPaid(payment, payments)}
                                     onClick={() => onMarkAsPaidClick(payment)}
                                   >
                                     <CheckCircle className="w-4 h-4 mr-1" />
@@ -1663,7 +1786,7 @@ export default function VolleyballTeamManager() {
       </Dialog>
 
       {/* Payment Dialog */}
-      <Dialog open={paymentDialogOpen} onOpenChange={(open) => { setPaymentDialogOpen(open); if (!open) { setEditingPayment(null); setPlayerSelectOpen(false); resetPaymentForm(); } }}>
+      <Dialog open={paymentDialogOpen} onOpenChange={(open) => { setPaymentDialogOpen(open); if (!open) { setEditingPayment(null); setPlayerSelectOpen(false); setStartDatePickerOpen(false); setEndDatePickerOpen(false); setInstallmentDatePickerOpen(null); resetPaymentForm(); } }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingPayment ? 'Përditëso Faturën' : 'Shto Pagesë të Re'}</DialogTitle>
@@ -1684,6 +1807,7 @@ export default function VolleyballTeamManager() {
                     <Input
                       id="edit-amount"
                       type="number"
+                      min="0"
                       step="100"
                       value={paymentForm.amount}
                       onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
@@ -1796,24 +1920,84 @@ export default function VolleyballTeamManager() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="startDate">Data e Fillimit *</Label>
-                    <Input
-                      id="startDate"
-                      type="date"
-                      value={paymentForm.startDate}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, startDate: e.target.value })}
-                    />
+                    <Popover open={startDatePickerOpen} onOpenChange={setStartDatePickerOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          id="startDate"
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal"
+                        >
+                          {paymentForm.startDate ? formatDateDDMMYYYY(paymentForm.startDate) : 'Zgjidhni datën'}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <div className="p-2 border-b">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              setPaymentForm({ ...paymentForm, startDate: SHORTCUT_START });
+                              setStartDatePickerOpen(false);
+                            }}
+                          >
+                            1 Shtator 2025
+                          </Button>
+                        </div>
+                        <DatePicker
+                          mode="single"
+                          selected={paymentForm.startDate ? parse(paymentForm.startDate, 'yyyy-MM-dd', new Date()) : undefined}
+                          onSelect={(date) => {
+                            if (date) {
+                              setPaymentForm({ ...paymentForm, startDate: format(date, 'yyyy-MM-dd') });
+                              setStartDatePickerOpen(false);
+                            }
+                          }}
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="endDate">
                       {paymentForm.paymentType === 'installment' ? 'Data e Mbarimit (opsionale)' : 'Data e Mbarimit *'}
                     </Label>
-                    <Input
-                      id="endDate"
-                      type="date"
-                      value={paymentForm.endDate}
-                      min={paymentForm.startDate}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, endDate: e.target.value })}
-                    />
+                    <Popover open={endDatePickerOpen} onOpenChange={setEndDatePickerOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          id="endDate"
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal"
+                        >
+                          {paymentForm.endDate ? formatDateDDMMYYYY(paymentForm.endDate) : 'Zgjidhni datën'}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <div className="p-2 border-b">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              setPaymentForm({ ...paymentForm, endDate: SHORTCUT_END });
+                              setEndDatePickerOpen(false);
+                            }}
+                          >
+                            30 Qershor 2026
+                          </Button>
+                        </div>
+                        <DatePicker
+                          mode="single"
+                          selected={paymentForm.endDate ? parse(paymentForm.endDate, 'yyyy-MM-dd', new Date()) : undefined}
+                          onSelect={(date) => {
+                            if (date) {
+                              setPaymentForm({ ...paymentForm, endDate: format(date, 'yyyy-MM-dd') });
+                              setEndDatePickerOpen(false);
+                            }
+                          }}
+                          disabled={paymentForm.startDate ? (date) => date < parse(paymentForm.startDate, 'yyyy-MM-dd', new Date()) : undefined}
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
 
@@ -1871,6 +2055,7 @@ export default function VolleyballTeamManager() {
                     <Input
                       id="totalAmount"
                       type="number"
+                      min="0"
                       step="100"
                       value={paymentForm.totalAmount}
                       onChange={(e) => setPaymentForm({ ...paymentForm, totalAmount: e.target.value })}
@@ -1916,18 +2101,66 @@ export default function VolleyballTeamManager() {
                   if (invoiceCount <= 0 || !paymentForm.totalAmount) return null;
 
                   return (
-                    <div className={`flex items-start gap-3 p-3 rounded-lg ${paymentForm.paymentType === 'installment'
-                      ? 'bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800'
-                      : 'bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800'
-                      }`}>
-                      <div className="flex-1">
-                        <p className={`text-sm font-semibold ${paymentForm.paymentType === 'installment' ? 'text-blue-700 dark:text-blue-300' : 'text-orange-700 dark:text-orange-300'}`}>
-                          Do të krijohen {invoiceCount} fatura
-                        </p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {formatCurrency(perInvoice)} / faturë · {previewNote}
-                        </p>
+                    <div className="space-y-3">
+                      <div className={`flex items-start gap-3 p-3 rounded-lg ${paymentForm.paymentType === 'installment'
+                        ? 'bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800'
+                        : 'bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800'
+                        }`}>
+                        <div className="flex-1">
+                          <p className={`text-sm font-semibold ${paymentForm.paymentType === 'installment' ? 'text-blue-700 dark:text-blue-300' : 'text-orange-700 dark:text-orange-300'}`}>
+                            Do të krijohen {invoiceCount} fatura
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {formatCurrency(perInvoice)} / faturë · {previewNote}
+                          </p>
+                        </div>
                       </div>
+                      {paymentForm.paymentType === 'installment' && paymentForm.startDate && paymentForm.endDate && paymentForm.installmentConfig.length > 0 && (
+                        <div className="space-y-2">
+                          <Label>Konfigurimi i kësteve</Label>
+                          <div className="space-y-2 max-h-48 overflow-y-auto">
+                            {paymentForm.installmentConfig.map((inst, idx) => {
+                              const periodMonth = inst.endDate ? (() => {
+                                const d = parse(inst.endDate, 'yyyy-MM-dd', new Date());
+                                return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+                              })() : '-';
+                              return (
+                                <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                  <span className="text-sm font-medium w-16">Këst {idx + 1}</span>
+                                  <Popover open={installmentDatePickerOpen === idx} onOpenChange={(open) => setInstallmentDatePickerOpen(open ? idx : null)}>
+                                    <PopoverTrigger asChild>
+                                      <Button variant="outline" size="sm" className="flex-1 justify-start text-left font-normal">
+                                        {inst.endDate ? formatDateDDMMYYYY(inst.endDate) : 'Zgjidhni'}
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="start">
+                                      <DatePicker
+                                        mode="single"
+                                        selected={inst.endDate ? parse(inst.endDate, 'yyyy-MM-dd', new Date()) : undefined}
+                                        onSelect={(date) => {
+                                          if (date) {
+                                            const cfg = [...paymentForm.installmentConfig];
+                                            cfg[idx] = { endDate: format(date, 'yyyy-MM-dd') };
+                                            setPaymentForm({ ...paymentForm, installmentConfig: cfg });
+                                            setInstallmentDatePickerOpen(null);
+                                          }
+                                        }}
+                                        disabled={(date) => {
+                                          const start = parse(paymentForm.startDate, 'yyyy-MM-dd', new Date());
+                                          const end = parse(paymentForm.endDate, 'yyyy-MM-dd', new Date());
+                                          return date < start || date > end;
+                                        }}
+                                      />
+                                    </PopoverContent>
+                                  </Popover>
+                                  <span className="text-xs text-gray-500 w-24">Periudha: {periodMonth}</span>
+                                  <span className="text-sm font-medium">{formatCurrency(perInvoice)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -1996,6 +2229,28 @@ export default function VolleyballTeamManager() {
                   </Badge>
                 </div>
               </div>
+
+              {(() => {
+                const { totalBills, amountPaid, amountLeft } = getPlayerPaymentSummary(viewingPlayer);
+                return (
+                  <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Totali:</span>
+                      <span className="font-medium">{formatCurrency(totalBills)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Paguar:</span>
+                      <span className="font-medium">{formatCurrency(amountPaid)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">{amountLeft <= 0 ? 'Tejpagim:' : 'Mbetur:'}</span>
+                      <span className={`font-medium ${amountLeft <= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {formatCurrency(Math.abs(amountLeft))}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div>
                 <Label className="text-gray-500">Historia e Pagesave</Label>

@@ -34,6 +34,13 @@ export async function GET() {
     const totalPaid = allPayments.filter(p => p.status === 'paid').length;
     const totalPending = allPayments.filter(p => p.status === 'pending').length;
     const totalOverdue = allPayments.filter(p => p.status === 'overdue').length;
+    const totalExpected = allPayments.length;
+
+    const allTimeAmountResult = await db.payment.aggregate({
+      where: { status: 'paid' },
+      _sum: { amount: true },
+    });
+    const amountCollectedAllTime = allTimeAmountResult._sum.amount ?? 0;
 
     const recentPayments = await db.payment.findMany({
       where: {
@@ -48,16 +55,12 @@ export async function GET() {
       take: 5,
     });
 
-    const playersNotPaidThisMonth = await db.player.findMany({
+    const playersWithUnpaidBills = await db.player.findMany({
       where: {
         active: true,
-        NOT: {
-          payments: {
-            some: {
-              month: currentMonth,
-              year: currentYear,
-              status: 'paid',
-            },
+        payments: {
+          some: {
+            status: { in: ['pending', 'overdue'] },
           },
         },
       },
@@ -74,13 +77,21 @@ export async function GET() {
         collectionRate: totalPlayers > 0 ? (paidPlayersCount / totalPlayers) * 100 : 0,
         amountCollected: totalAmountCollected,
       },
+      allTime: {
+        paid: totalPaid,
+        pending: totalPending,
+        overdue: totalOverdue,
+        totalExpected,
+        collectionRate: totalExpected > 0 ? (totalPaid / totalExpected) * 100 : 0,
+        amountCollected: amountCollectedAllTime,
+      },
       overall: {
         totalPaid,
         totalPending,
         totalOverdue,
       },
       recentPayments,
-      playersNotPaidThisMonth,
+      playersWithUnpaidBills,
     });
   } catch (error) {
     console.error('Error fetching stats:', error);

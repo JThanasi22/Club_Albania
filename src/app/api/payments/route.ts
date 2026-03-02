@@ -58,6 +58,7 @@ export async function POST(request: Request) {
       startDate,
       endDate,
       installments,
+      installmentDueDates,
       status,
       notes,
       month,
@@ -71,8 +72,8 @@ export async function POST(request: Request) {
 
     if (month && year && amount !== undefined && !paymentType) {
       const parsedAmount = parseFloat(amount);
-      if (isNaN(parsedAmount) || parsedAmount <= 0) {
-        return NextResponse.json({ error: 'Shuma duhet të jetë numër pozitiv' }, { status: 400 });
+      if (isNaN(parsedAmount) || parsedAmount < 0) {
+        return NextResponse.json({ error: 'Shuma nuk mund të jetë negative' }, { status: 400 });
       }
       const payment = await db.payment.create({
         data: {
@@ -104,8 +105,8 @@ export async function POST(request: Request) {
 
     if (paymentType === 'installment') {
       const rawAmount = parseFloat(totalAmount ?? amount);
-      if (isNaN(rawAmount) || rawAmount <= 0) {
-        return NextResponse.json({ error: 'Shuma duhet të jetë numër pozitiv' }, { status: 400 });
+      if (isNaN(rawAmount) || rawAmount < 0) {
+        return NextResponse.json({ error: 'Shuma nuk mund të jetë negative' }, { status: 400 });
       }
 
       const numInstallments = parseInt(installments);
@@ -123,16 +124,26 @@ export async function POST(request: Request) {
 
       const amountEach = Math.round((rawAmount / numInstallments) * 100) / 100;
       const invoices = [];
+      let dueDates: Date[];
 
-      const totalPeriodMs = planEndDate.getTime() - planStartDate.getTime();
-      const intervalMs = totalPeriodMs / numInstallments;
+      if (Array.isArray(installmentDueDates) && installmentDueDates.length === numInstallments) {
+        dueDates = installmentDueDates.map((d: string) => new Date(d));
+        for (let i = 0; i < dueDates.length; i++) {
+          if (isNaN(dueDates[i].getTime()) || dueDates[i] < planStartDate || dueDates[i] > planEndDate) {
+            return NextResponse.json({ error: `Data e këstit ${i + 1} duhet të jetë midis datës së fillimit dhe mbarimit` }, { status: 400 });
+          }
+        }
+      } else {
+        const totalPeriodMs = planEndDate.getTime() - planStartDate.getTime();
+        const intervalMs = totalPeriodMs / numInstallments;
+        dueDates = Array.from({ length: numInstallments }, (_, i) =>
+          new Date(planStartDate.getTime() + (intervalMs * (i + 1)))
+        );
+      }
 
       for (let i = 0; i < numInstallments; i++) {
-        const dueDate = new Date(planStartDate.getTime() + (intervalMs * (i + 1)));
-
-        const periodStart = new Date(planStartDate.getTime() + (intervalMs * i));
-        const periodEnd = i === numInstallments - 1 ? planEndDate : new Date(planStartDate.getTime() + (intervalMs * (i + 1)));
-        const midPeriod = new Date((periodStart.getTime() + periodEnd.getTime()) / 2);
+        const dueDate = dueDates[i];
+        const midPeriod = dueDate;
 
         const isLast = i === numInstallments - 1;
         const thisAmount = isLast ? Math.round((rawAmount - amountEach * (numInstallments - 1)) * 100) / 100 : amountEach;
@@ -186,14 +197,14 @@ export async function POST(request: Request) {
 
       if (totalPlanAmount !== undefined && totalPlanAmount !== null && totalPlanAmount !== '') {
         const parsedTotal = parseFloat(totalPlanAmount);
-        if (isNaN(parsedTotal) || parsedTotal <= 0) {
-          return NextResponse.json({ error: 'Shuma totale duhet të jetë numër pozitiv' }, { status: 400 });
+        if (isNaN(parsedTotal) || parsedTotal < 0) {
+          return NextResponse.json({ error: 'Shuma totale nuk mund të jetë negative' }, { status: 400 });
         }
         amountPerInvoice = Math.round((parsedTotal / totalMonths) * 100) / 100;
       } else {
         const rawPerMonth = parseFloat(amountPerMonth ?? totalAmount ?? amount);
-        if (isNaN(rawPerMonth) || rawPerMonth <= 0) {
-          return NextResponse.json({ error: 'Shuma duhet të jetë numër pozitiv' }, { status: 400 });
+        if (isNaN(rawPerMonth) || rawPerMonth < 0) {
+          return NextResponse.json({ error: 'Shuma nuk mund të jetë negative' }, { status: 400 });
         }
         amountPerInvoice = rawPerMonth;
       }
