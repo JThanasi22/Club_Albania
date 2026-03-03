@@ -122,6 +122,13 @@ const formatDateDDMMYYYY = (isoDate: string) => {
   }
 };
 
+const formatDateDisplay = (val: string | Date | null | undefined): string => {
+  if (val == null) return '';
+  const d = typeof val === 'string' ? new Date(val) : val;
+  if (Number.isNaN(d.getTime())) return '';
+  return format(d, 'dd/MM/yyyy');
+};
+
 const SHORTCUT_START = '2025-09-01';
 const SHORTCUT_END = '2026-06-30';
 
@@ -155,6 +162,7 @@ export default function VolleyballTeamManager() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [startDatePickerOpen, setStartDatePickerOpen] = useState(false);
   const [endDatePickerOpen, setEndDatePickerOpen] = useState(false);
+  const [editDueDatePickerOpen, setEditDueDatePickerOpen] = useState(false);
   const [installmentDatePickerOpen, setInstallmentDatePickerOpen] = useState<number | null>(null);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
@@ -548,6 +556,9 @@ export default function VolleyballTeamManager() {
         status: paymentForm.status,
         notes: paymentForm.notes,
       };
+      if (editingPayment.paymentType === 'installment' && paymentForm.startDate) {
+        updatePayload.dueDate = paymentForm.startDate;
+      }
       const res = await fetch(`/api/payments/${editingPayment.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -715,6 +726,7 @@ export default function VolleyballTeamManager() {
   };
 
   const openEditPayment = (payment: Payment) => {
+    setEditDueDatePickerOpen(false);
     setEditingPayment(payment);
     setPaymentForm({
       playerId: payment.playerId,
@@ -1065,7 +1077,7 @@ export default function VolleyballTeamManager() {
                           <div className="text-right">
                             <div className="font-semibold text-green-600">{formatCurrency(payment.amount)}</div>
                             <div className="text-xs text-gray-500">
-                              {payment.paidDate ? new Date(payment.paidDate).toLocaleDateString('sq-AL') : ''}
+                              {formatDateDisplay(payment.paidDate)}
                             </div>
                           </div>
                         </div>
@@ -1487,7 +1499,7 @@ export default function VolleyballTeamManager() {
                           </div>
                           <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700">
                             <span className="text-xs text-gray-500">
-                              {payment.dueDate ? `Afati: ${new Date(payment.dueDate).toLocaleDateString('sq-AL')}` : '-'}
+                              {payment.dueDate ? `Afati: ${formatDateDisplay(payment.dueDate)}` : '-'}
                             </span>
                             <div className="flex gap-2">
                               {payment.status !== 'paid' && (
@@ -1567,10 +1579,8 @@ export default function VolleyballTeamManager() {
                             <TableCell>{getStatusBadge(payment.status)}</TableCell>
                             <TableCell>
                               {payment.dueDate
-                                ? new Date(payment.dueDate).toLocaleDateString('sq-AL')
-                                : payment.paidDate
-                                  ? new Date(payment.paidDate).toLocaleDateString('sq-AL')
-                                  : '-'}
+                                ? formatDateDisplay(payment.dueDate)
+                                : formatDateDisplay(payment.paidDate) || '-'}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-2">
@@ -1835,6 +1845,34 @@ export default function VolleyballTeamManager() {
                     placeholder="Shënime opsionale"
                   />
                 </div>
+                {editingPayment.paymentType === 'installment' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-dueDate">Data e skadimit</Label>
+                    <Popover open={editDueDatePickerOpen} onOpenChange={setEditDueDatePickerOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          id="edit-dueDate"
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal"
+                        >
+                          {paymentForm.startDate ? formatDateDDMMYYYY(paymentForm.startDate) : 'Zgjidhni datën'}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <DatePicker
+                          mode="single"
+                          selected={paymentForm.startDate ? parse(paymentForm.startDate, 'yyyy-MM-dd', new Date()) : undefined}
+                          onSelect={(date) => {
+                            if (date) {
+                              setPaymentForm({ ...paymentForm, startDate: format(date, 'yyyy-MM-dd') });
+                              setEditDueDatePickerOpen(false);
+                            }
+                          }}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -2220,7 +2258,7 @@ export default function VolleyballTeamManager() {
                 </div>
                 <div>
                   <Label className="text-gray-500">Data e Bashkimit</Label>
-                  <p className="font-medium">{new Date(viewingPlayer.joinDate).toLocaleDateString('sq-AL')}</p>
+                  <p className="font-medium">{formatDateDisplay(viewingPlayer.joinDate)}</p>
                 </div>
                 <div>
                   <Label className="text-gray-500">Statusi</Label>

@@ -32,7 +32,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { month, year, amount, status, paidDate, notes, amountPaid } = body;
+    const { month, year, amount, status, paidDate, notes, amountPaid, dueDate } = body;
 
     const existing = await db.payment.findUnique({ where: { id } });
     if (!existing) {
@@ -105,16 +105,34 @@ export async function PUT(
       }
     }
 
+    const updateData: {
+      month?: number;
+      year?: number;
+      amount?: number;
+      status?: string;
+      paidDate?: Date | null;
+      notes?: string;
+      dueDate?: Date;
+    } = {
+      month: month ? parseInt(month) : undefined,
+      year: year ? parseInt(year) : undefined,
+      amount: amount !== undefined ? parseFloat(amount) : undefined,
+      status: status || undefined,
+      paidDate: resolvedPaidDate,
+      notes: notes !== undefined ? notes : undefined,
+    };
+    if (dueDate != null && existing.paymentType === 'installment') {
+      const parsedDue = new Date(dueDate);
+      if (!Number.isNaN(parsedDue.getTime())) {
+        updateData.dueDate = parsedDue;
+        updateData.month = parsedDue.getMonth() + 1;
+        updateData.year = parsedDue.getFullYear();
+      }
+    }
+
     const payment = await db.payment.update({
       where: { id },
-      data: {
-        month: month ? parseInt(month) : undefined,
-        year: year ? parseInt(year) : undefined,
-        amount: amount !== undefined ? parseFloat(amount) : undefined,
-        status: status || undefined,
-        paidDate: resolvedPaidDate,
-        notes: notes !== undefined ? notes : undefined,
-      },
+      data: updateData,
       include: {
         player: true,
       },
