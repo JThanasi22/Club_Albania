@@ -57,14 +57,23 @@ export async function PUT(
       const creditApplied = existing.creditApplied ?? 0;
       const amountDue = existing.amount - creditApplied;
 
+      const updateData: { amountPaid: number; status: string; paidDate: Date; notes?: string; dueDate?: Date; month?: number; year?: number } = {
+        amountPaid: paid,
+        status: 'paid',
+        paidDate: new Date(),
+        notes: notes !== undefined ? notes : undefined,
+      };
+      if (dueDate != null) {
+        const parsedDue = new Date(dueDate);
+        if (!Number.isNaN(parsedDue.getTime())) {
+          updateData.dueDate = parsedDue;
+          updateData.month = parsedDue.getMonth() + 1;
+          updateData.year = parsedDue.getFullYear();
+        }
+      }
       const payment = await db.payment.update({
         where: { id },
-        data: {
-          amountPaid: paid,
-          status: 'paid',
-          paidDate: new Date(),
-          notes: notes !== undefined ? notes : undefined,
-        },
+        data: updateData,
         include: { player: true },
       });
 
@@ -113,6 +122,7 @@ export async function PUT(
       month?: number;
       year?: number;
       amount?: number;
+      amountPaid?: number | null;
       status?: string;
       paidDate?: Date | null;
       notes?: string;
@@ -125,6 +135,15 @@ export async function PUT(
       paidDate: resolvedPaidDate,
       notes: notes !== undefined ? notes : undefined,
     };
+    if (amountPaid !== undefined && amountPaid !== null && existing.paymentType !== 'installment') {
+      const paid = parseFloat(amountPaid);
+      if (!Number.isNaN(paid) && paid >= 0) {
+        updateData.amountPaid = Math.round(paid * 100) / 100;
+      }
+    } else if (status === 'paid' && existing.status !== 'paid' && (amountPaid === undefined || amountPaid === null)) {
+      const dueAmount = existing.amount - (existing.creditApplied ?? 0);
+      updateData.amountPaid = Math.round(dueAmount * 100) / 100;
+    }
     if (dueDate != null && existing.paymentType === 'installment') {
       const parsedDue = new Date(dueDate);
       if (!Number.isNaN(parsedDue.getTime())) {

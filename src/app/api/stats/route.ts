@@ -1,94 +1,97 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+type PaymentEntry = { amount: number; date: string };
+
+function sumPaymentHistory(history: PaymentEntry[] | null): number {
+  if (!Array.isArray(history)) return 0;
+  return history.reduce((s, e) => s + (e?.amount ?? 0), 0);
+}
+
 export async function GET() {
   try {
     const currentDate = new Date();
     const currentMonth = currentDate.getMonth() + 1;
     const currentYear = currentDate.getFullYear();
 
-    const totalPlayers = await db.player.count({
+    const players = await db.player.findMany({
       where: { active: true },
-    });
-
-    const currentMonthPayments = await db.payment.findMany({
-      where: {
-        month: currentMonth,
-        year: currentYear,
-      },
-      include: {
-        player: true,
+      select: {
+        id: true,
+        name: true,
+        team: true,
+        totalPayment: true,
+        paymentHistory: true,
       },
     });
 
-    const paidInvoices = currentMonthPayments.filter(p => p.status === 'paid');
-    const pendingThisMonth = currentMonthPayments.filter(p => p.status === 'pending').length;
-    const totalAmountCollected = paidInvoices.reduce((sum, p) => sum + p.amount, 0);
+    const totalPlayers = players.length;
+    let totalExpected = 0;
+    let amountCollectedAllTime = 0;
+    const recentEntries: { amount: number; date: string; playerId: string; playerName: string }[] = [];
+    const playersWithUnpaidBills: typeof players = [];
+    let currentMonthCollected = 0;
 
-    const distinctPaidPlayerIds = new Set(paidInvoices.map(p => p.playerId));
-    const paidPlayersCount = distinctPaidPlayerIds.size;
+    for (const p of players) {
+      const total = Number(p.totalPayment) || 0;
+      const history = (p.paymentHistory as PaymentEntry[] | null) ?? [];
+      const paid = sumPaymentHistory(history);
+      totalExpected += total;
+      amountCollectedAllTime += paid;
+      if (total > 0 && paid < total) {
+        playersWithUnpaidBills.push(p);
+      }
+      for (const e of history) {
+        if (!e?.date) continue;
+        const [y, m] = e.date.split('-').map(Number);
+        if (m === currentMonth && y === currentYear) {
+          currentMonthCollected += e.amount ?? 0;
+        }
+        recentEntries.push({
+          amount: e.amount ?? 0,
+          date: e.date,
+          playerId: p.id,
+          playerName: p.name,
+        });
+      }
+    }
 
-    const allPayments = await db.payment.findMany({
-      select: { status: true },
-    });
-    const totalPaid = allPayments.filter(p => p.status === 'paid').length;
-    const totalPending = allPayments.filter(p => p.status === 'pending').length;
-    const totalOverdue = allPayments.filter(p => p.status === 'overdue').length;
-    const totalExpected = allPayments.length;
+    recentEntries.sort((a, b) => (b.date < a.date ? -1 : b.date > a.date ? 1 : 0));
+    const recentPayments = recentEntries.slice(0, 5).map((e) => ({
+      id: `${e.playerId}-${e.date}-${e.amount}`,
+      amount: e.amount,
+      paidDate: e.date,
+      player: { id: e.playerId, name: e.playerName },
+    }));
 
-    const allTimeAmountResult = await db.payment.aggregate({
-      where: { status: 'paid' },
-      _sum: { amount: true },
-    });
-    const amountCollectedAllTime = allTimeAmountResult._sum.amount ?? 0;
-
-    const recentPayments = await db.payment.findMany({
-      where: {
-        status: 'paid',
-      },
-      include: {
-        player: true,
-      },
-      orderBy: {
-        paidDate: 'desc',
-      },
-      take: 5,
-    });
-
-    const playersWithUnpaidBills = await db.player.findMany({
-      where: {
-        active: true,
-        payments: {
-          some: {
-            status: { in: ['pending', 'overdue'] },
-          },
-        },
-      },
-    });
+    const collectionRate = totalExpected > 0 ? (amountCollectedAllTime / totalExpected) * 100 : 0;
+    const currentMonthRate = totalExpected > 0 ? (currentMonthCollected / totalExpected) * 100 : 0;
 
     return NextResponse.json({
       totalPlayers,
+      totalExpectedAmount: totalExpected,
+      amountCollectedAllTime,
       currentMonth: {
         month: currentMonth,
         year: currentYear,
-        paid: paidPlayersCount,
-        pending: pendingThisMonth,
+        paid: 0,
+        pending: 0,
         totalExpected: totalPlayers,
-        collectionRate: totalPlayers > 0 ? (paidPlayersCount / totalPlayers) * 100 : 0,
-        amountCollected: totalAmountCollected,
+        collectionRate: currentMonthRate,
+        amountCollected: currentMonthCollected,
       },
       allTime: {
-        paid: totalPaid,
-        pending: totalPending,
-        overdue: totalOverdue,
-        totalExpected,
-        collectionRate: totalExpected > 0 ? (totalPaid / totalExpected) * 100 : 0,
+        paid: 0,
+        pending: 0,
+        overdue: 0,
+        totalExpected: totalExpected,
+        collectionRate,
         amountCollected: amountCollectedAllTime,
       },
       overall: {
-        totalPaid,
-        totalPending,
-        totalOverdue,
+        totalPaid: 0,
+        totalPending: 0,
+        totalOverdue: 0,
       },
       recentPayments,
       playersWithUnpaidBills,

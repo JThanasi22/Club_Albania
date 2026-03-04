@@ -37,7 +37,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, email, phone, team, jerseyNumber, photo, joinDate, active } = body;
+    const { name, email, phone, team, jerseyNumber, photo, joinDate, active, totalPayment, paymentHistory } = body;
 
     const existing = await db.player.findUnique({ where: { id } });
     if (!existing) {
@@ -48,18 +48,37 @@ export async function PUT(
       return NextResponse.json({ error: 'Emri nuk mund të jetë bosh' }, { status: 400 });
     }
 
+    const updateData: Record<string, unknown> = {
+      name: name !== undefined ? name.trim() : undefined,
+      email: email !== undefined ? (email || null) : undefined,
+      phone: phone !== undefined ? (phone || null) : undefined,
+      team: team !== undefined ? (team || null) : undefined,
+      jerseyNumber: jerseyNumber !== undefined ? (jerseyNumber ? parseInt(jerseyNumber) : null) : undefined,
+      photo: photo !== undefined ? photo : undefined,
+      joinDate: joinDate ? new Date(joinDate) : undefined,
+      active: active !== undefined ? active : undefined,
+    };
+    if (totalPayment !== undefined) {
+      const total = Number(totalPayment);
+      updateData.totalPayment = Number.isNaN(total) ? 0 : Math.max(0, total);
+    }
+    if (paymentHistory !== undefined) {
+      if (!Array.isArray(paymentHistory)) {
+        return NextResponse.json({ error: 'paymentHistory duhet të jetë një array' }, { status: 400 });
+      }
+      const cleaned = paymentHistory
+        .filter((e: unknown) => e && typeof e === 'object' && 'amount' in e && 'date' in e)
+        .map((e: { amount?: unknown; date?: unknown }) => ({
+          amount: Number(e.amount) || 0,
+          date: typeof e.date === 'string' ? e.date : String(e.date ?? ''),
+        }))
+        .filter((e) => e.amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(e.date));
+      updateData.paymentHistory = cleaned;
+    }
+
     const player = await db.player.update({
       where: { id },
-      data: {
-        name: name !== undefined ? name.trim() : undefined,
-        email: email || null,
-        phone: phone || null,
-        team: team || null,
-        jerseyNumber: jerseyNumber ? parseInt(jerseyNumber) : null,
-        photo: photo !== undefined ? photo : undefined,
-        joinDate: joinDate ? new Date(joinDate) : undefined,
-        active: active !== undefined ? active : undefined,
-      },
+      data: updateData,
     });
 
     return NextResponse.json(player);

@@ -11,18 +11,20 @@ datasource db {
 }
 
 model Player {
-  id           String    @id @default(auto()) @map("_id") @db.ObjectId
-  name         String
-  email        String?
-  phone        String?
-  team         String?   // e.g., "U20", "U18", "U16", "U14", "U10"
-  jerseyNumber Int?
-  photo        String?   // Cloudinary URL
-  joinDate     DateTime  @default(now())
-  active       Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  payments     Payment[]
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  email           String?
+  phone           String?
+  team            String?   // e.g., "U20", "U18", "U16", "U14", "U10"
+  jerseyNumber    Int?
+  photo           String?   // Cloudinary URL
+  joinDate        DateTime  @default(now())
+  active          Boolean   @default(true)
+  totalPayment    Float     @default(0)
+  paymentHistory  Json?     // [{ amount: number, date: string }]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  payments        Payment[]
 }
 
 model Payment {

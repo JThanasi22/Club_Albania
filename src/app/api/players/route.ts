@@ -23,12 +23,13 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, email, phone, team, jerseyNumber, photo, joinDate, active } = body;
+    const { name, email, phone, team, jerseyNumber, photo, joinDate, active, totalPayment } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Emri është i detyrueshëm' }, { status: 400 });
     }
 
+    const total = totalPayment != null ? Number(totalPayment) : 0;
     const player = await db.player.create({
       data: {
         name,
@@ -39,6 +40,8 @@ export async function POST(request: Request) {
         photo: photo || null,
         joinDate: joinDate ? new Date(joinDate) : new Date(),
         active: active !== undefined ? active : true,
+        totalPayment: Number.isNaN(total) ? 0 : Math.max(0, total),
+        paymentHistory: [],
       },
     });
 
