@@ -537,7 +537,8 @@ export default function VolleyballTeamManager() {
   const filteredPlayers = (players || []).filter(player =>
     player?.name?.toLowerCase().includes(playerSearch.toLowerCase()) ||
     player?.email?.toLowerCase().includes(playerSearch.toLowerCase()) ||
-    player?.team?.toLowerCase().includes(playerSearch.toLowerCase())
+    player?.team?.toLowerCase().includes(playerSearch.toLowerCase()) ||
+    (player?.jerseyNumber != null && String(player.jerseyNumber).includes(playerSearch))
   );
 
   // Get player avatar
