@@ -57,20 +57,19 @@ export async function PUT(
       const creditApplied = existing.creditApplied ?? 0;
       const amountDue = existing.amount - creditApplied;
 
+      const payment = await db.payment.update({
+        where: { id },
+        data: {
+          amountPaid: paid,
+          status: 'paid',
+          paidDate: new Date(),
+          notes: notes !== undefined ? notes : undefined,
+        },
+        include: { player: true },
+      });
+
       if (paid >= amountDue) {
         const overpayment = Math.round((paid - amountDue) * 100) / 100;
-
-        const payment = await db.payment.update({
-          where: { id },
-          data: {
-            amountPaid: paid,
-            status: 'paid',
-            paidDate: new Date(),
-            notes: notes !== undefined ? notes : undefined,
-          },
-          include: { player: true },
-        });
-
         if (overpayment > 0 && existing.installmentNumber != null) {
           const nextInvoice = await db.payment.findFirst({
             where: {
@@ -88,21 +87,26 @@ export async function PUT(
             });
           }
         }
-
-        return NextResponse.json(payment);
-      } else {
-        const payment = await db.payment.update({
-          where: { id },
-          data: {
-            amountPaid: paid,
-            status: 'pending',
-            notes: notes !== undefined ? notes : undefined,
+      } else if (existing.installmentNumber != null) {
+        const shortfall = Math.round((amountDue - paid) * 100) / 100;
+        const nextInvoice = await db.payment.findFirst({
+          where: {
+            planId: existing.planId,
+            installmentNumber: existing.installmentNumber + 1,
           },
-          include: { player: true },
         });
 
-        return NextResponse.json(payment);
+        if (nextInvoice) {
+          await db.payment.update({
+            where: { id: nextInvoice.id },
+            data: {
+              amount: nextInvoice.amount + shortfall,
+            },
+          });
+        }
       }
+
+      return NextResponse.json(payment);
     }
 
     const updateData: {

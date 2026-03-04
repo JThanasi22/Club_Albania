@@ -59,6 +59,8 @@ export async function POST(request: Request) {
       endDate,
       installments,
       installmentDueDates,
+      installmentAmounts,
+      installmentAmountsPaid,
       status,
       notes,
       month,
@@ -122,6 +124,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Data e mbarimit duhet të jetë pas datës së fillimit' }, { status: 400 });
       }
 
+      const useCustomAmounts = Array.isArray(installmentAmounts) && installmentAmounts.length === numInstallments;
       const amountEach = Math.round((rawAmount / numInstallments) * 100) / 100;
       const invoices = [];
       let dueDates: Date[];
@@ -145,14 +148,23 @@ export async function POST(request: Request) {
         const dueDate = dueDates[i];
         const midPeriod = dueDate;
 
-        const isLast = i === numInstallments - 1;
-        const thisAmount = isLast ? Math.round((rawAmount - amountEach * (numInstallments - 1)) * 100) / 100 : amountEach;
+        let thisAmount: number;
+        if (useCustomAmounts) {
+          const custom = Number(installmentAmounts[i]);
+          thisAmount = typeof custom === 'number' && !Number.isNaN(custom) && custom >= 0
+            ? Math.round(custom * 100) / 100
+            : amountEach;
+        } else {
+          const isLast = i === numInstallments - 1;
+          thisAmount = isLast ? Math.round((rawAmount - amountEach * (numInstallments - 1)) * 100) / 100 : amountEach;
+        }
 
         invoices.push({
           playerId,
           month: midPeriod.getMonth() + 1,
           year: midPeriod.getFullYear(),
           amount: thisAmount,
+          creditApplied: 0,
           status: initialStatus,
           paidDate: initialStatus === 'paid' ? new Date() : null,
           notes: notes || null,
@@ -164,6 +176,36 @@ export async function POST(request: Request) {
           installmentNumber: i + 1,
           totalInstallments: numInstallments,
         });
+      }
+
+      const amountsPaid = Array.isArray(installmentAmountsPaid) && installmentAmountsPaid.length === numInstallments
+        ? installmentAmountsPaid.map((p: unknown) => (typeof p === 'number' && !Number.isNaN(p) && p >= 0 ? p : 0))
+        : null;
+
+      if (amountsPaid) {
+        for (let i = 0; i < numInstallments; i++) {
+          const paid = Math.round((amountsPaid[i] as number) * 100) / 100;
+          if (paid <= 0) continue;
+          const inv = invoices[i] as { amount: number; creditApplied?: number; amountPaid?: number; status: string; paidDate: Date | null };
+          const credit = inv.creditApplied ?? 0;
+          const amountDue = inv.amount - credit;
+          inv.amountPaid = paid;
+          inv.status = 'paid';
+          inv.paidDate = new Date();
+          if (paid >= amountDue) {
+            const overpayment = Math.round((paid - amountDue) * 100) / 100;
+            if (overpayment > 0 && i + 1 < numInstallments) {
+              const next = invoices[i + 1] as { creditApplied?: number };
+              next.creditApplied = (next.creditApplied ?? 0) + overpayment;
+            }
+          } else {
+            const shortfall = Math.round((amountDue - paid) * 100) / 100;
+            if (i + 1 < numInstallments) {
+              const next = invoices[i + 1] as { amount: number };
+              next.amount = Math.round((next.amount + shortfall) * 100) / 100;
+            }
+          }
+        }
       }
 
       const created = await db.payment.createMany({ data: invoices });

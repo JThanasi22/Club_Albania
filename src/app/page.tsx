@@ -20,7 +20,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Users, TrendingUp, Calendar, Plus, Pencil, Trash2,
   CheckCircle, Clock, AlertCircle, UserPlus, CreditCard, Search,
-  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, Check, ChevronsUpDown
+  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, Check, ChevronsUpDown, Info, User, ListFilter
 } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { Calendar as DatePicker } from '@/components/ui/calendar';
@@ -179,9 +179,11 @@ export default function VolleyballTeamManager() {
   const [playerPhoto, setPlayerPhoto] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const prevTabRef = useRef<string | null>(null);
 
   const [playerSelectOpen, setPlayerSelectOpen] = useState(false);
   const [paymentFilterPlayerOpen, setPaymentFilterPlayerOpen] = useState(false);
+  const [paymentPeriodCalendarOpen, setPaymentPeriodCalendarOpen] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
@@ -194,6 +196,7 @@ export default function VolleyballTeamManager() {
   const [installmentPaidModalOpen, setInstallmentPaidModalOpen] = useState(false);
   const [installmentPaymentForPaid, setInstallmentPaymentForPaid] = useState<(Payment & { player: Player }) | null>(null);
   const [installmentAmountPaidInput, setInstallmentAmountPaidInput] = useState('');
+  const [paymentDetailsModalPayment, setPaymentDetailsModalPayment] = useState<(Payment & { player: Player }) | null>(null);
 
   const showConfirmDialog = (
     title: string,
@@ -224,7 +227,7 @@ export default function VolleyballTeamManager() {
     startDate: new Date().toISOString().split('T')[0],
     endDate: '',
     installments: '3',
-    installmentConfig: [] as { endDate: string }[],
+    installmentConfig: [] as { endDate: string; amountPaid?: string; amount?: string; amountManuallySet?: boolean }[],
     status: 'pending',
     notes: '',
     month: (new Date().getMonth() + 1).toString(),
@@ -240,29 +243,39 @@ export default function VolleyballTeamManager() {
       }
       return;
     }
-    const n = parseInt(paymentForm.installments) || 0;
+    const n = Number.parseInt(String(paymentForm.installments)) || 0;
     if (n < 1) return;
     const start = parse(paymentForm.startDate, 'yyyy-MM-dd', new Date());
     const end = parse(paymentForm.endDate, 'yyyy-MM-dd', new Date());
     if (end <= start) return;
+    const total = Number.parseFloat(String(paymentForm.totalAmount)) || 0;
+    const amountEach = n > 0 ? Math.round((total / n) * 100) / 100 : 0;
+    const lastAmount = n > 1 ? Math.round((total - amountEach * (n - 1)) * 100) / 100 : total;
     setPaymentForm(p => {
       const current = p.installmentConfig;
-      const cfg: { endDate: string }[] = [];
+      const cfg: { endDate: string; amountPaid?: string; amount?: string; amountManuallySet?: boolean }[] = [];
       for (let i = 0; i < n; i++) {
+        const computedAmount = i < n - 1 ? String(amountEach) : String(lastAmount);
         if (i < current.length) {
-          const d = parse(current[i].endDate, 'yyyy-MM-dd', new Date());
+          const prev = current[i] as { endDate: string; amountPaid?: string; amount?: string; amountManuallySet?: boolean };
+          const d = parse(prev.endDate, 'yyyy-MM-dd', new Date());
           const clamped = d < start ? start : d > end ? end : d;
-          cfg.push({ endDate: format(clamped, 'yyyy-MM-dd') });
+          cfg.push({
+            endDate: format(clamped, 'yyyy-MM-dd'),
+            amountPaid: prev?.amountPaid ?? '',
+            amount: computedAmount,
+            amountManuallySet: false,
+          });
         } else {
           const fraction = (i + 1) / n;
           const d = new Date(start.getTime() + fraction * (end.getTime() - start.getTime()));
-          cfg.push({ endDate: format(d, 'yyyy-MM-dd') });
+          cfg.push({ endDate: format(d, 'yyyy-MM-dd'), amountPaid: '', amount: computedAmount, amountManuallySet: false });
         }
       }
-      if (cfg.length === current.length && cfg.every((c, i) => c.endDate === current[i]?.endDate)) return p;
+      if (cfg.length === current.length && cfg.every((c, i) => c.endDate === (current[i] as { endDate: string })?.endDate && (c.amountPaid ?? '') === ((current[i] as { amountPaid?: string })?.amountPaid ?? '') && (c.amount ?? '') === ((current[i] as { amount?: string })?.amount ?? ''))) return p;
       return { ...p, installmentConfig: cfg };
     });
-  }, [paymentForm.paymentType, paymentForm.startDate, paymentForm.endDate, paymentForm.installments]);
+  }, [paymentForm.paymentType, paymentForm.startDate, paymentForm.endDate, paymentForm.installments, paymentForm.totalAmount]);
 
   // Check authentication on mount
   useEffect(() => {
@@ -369,6 +382,10 @@ export default function VolleyballTeamManager() {
     }
   };
 
+  const refreshAllData = async () => {
+    await Promise.all([fetchStats(), fetchPlayers(), fetchPayments()]);
+  };
+
   useEffect(() => {
     if (authenticated) {
       const initFetch = async () => {
@@ -385,6 +402,14 @@ export default function VolleyballTeamManager() {
       fetchPayments();
     }
   }, [paymentMonthFilter, paymentYearFilter, paymentStatusFilter, paymentPlayerFilter, authenticated]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    if (prevTabRef.current !== null && prevTabRef.current !== activeTab) {
+      refreshAllData();
+    }
+    prevTabRef.current = activeTab;
+  }, [activeTab, authenticated]);
 
   // Handle photo upload to Cloudinary
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -438,8 +463,7 @@ export default function VolleyballTeamManager() {
       toast.success('Lojtari u shtua me sukses');
       setPlayerDialogOpen(false);
       resetPlayerForm();
-      fetchPlayers();
-      fetchStats();
+      refreshAllData();
     } catch {
       toast.error('Shtimi i lojtarit dështoi');
     } finally {
@@ -464,8 +488,7 @@ export default function VolleyballTeamManager() {
       setPlayerDialogOpen(false);
       setEditingPlayer(null);
       resetPlayerForm();
-      fetchPlayers();
-      fetchStats();
+      refreshAllData();
     } catch {
       toast.error('Përditësimi i lojtarit dështoi');
     } finally {
@@ -483,8 +506,7 @@ export default function VolleyballTeamManager() {
           const res = await fetch(`/api/players/${id}`, { method: 'DELETE' });
           if (!res.ok) throw new Error('Failed to delete player');
           toast.success('Lojtari u fshi me sukses');
-          fetchPlayers();
-          fetchStats();
+          refreshAllData();
         } catch {
           toast.error('Fshirja e lojtarit dështoi');
         } finally {
@@ -517,7 +539,19 @@ export default function VolleyballTeamManager() {
             notes: paymentForm.notes,
           };
           if (paymentForm.paymentType === 'installment' && paymentForm.installmentConfig.length > 0) {
-            return { ...base, totalAmount: paymentForm.totalAmount, installmentDueDates: paymentForm.installmentConfig.map(c => c.endDate) };
+            return {
+              ...base,
+              totalAmount: paymentForm.totalAmount,
+              installmentDueDates: paymentForm.installmentConfig.map(c => c.endDate),
+              installmentAmounts: paymentForm.installmentConfig.map(c => {
+                const v = Number.parseFloat((c as { amount?: string }).amount ?? '');
+                return Number.isNaN(v) ? 0 : v;
+              }),
+              installmentAmountsPaid: paymentForm.installmentConfig.map(c => {
+                const v = Number.parseFloat((c as { amountPaid?: string }).amountPaid ?? '');
+                return Number.isNaN(v) ? 0 : v;
+              }),
+            };
           }
           if (paymentForm.paymentType === 'monthly' && paymentForm.monthlyAmountMode === 'totalPlan') {
             return { ...base, totalPlanAmount: paymentForm.totalAmount };
@@ -537,8 +571,7 @@ export default function VolleyballTeamManager() {
       toast.success(`${count} faturë u shtua me sukses`);
       setPaymentDialogOpen(false);
       resetPaymentForm();
-      fetchPayments();
-      fetchStats();
+      refreshAllData();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Shtimi i pagesës dështoi';
       toast.error(message);
@@ -570,8 +603,7 @@ export default function VolleyballTeamManager() {
       setPaymentDialogOpen(false);
       setEditingPayment(null);
       resetPaymentForm();
-      fetchPayments();
-      fetchStats();
+      refreshAllData();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Përditësimi i pagesës dështoi';
       toast.error(message);
@@ -590,8 +622,7 @@ export default function VolleyballTeamManager() {
           const res = await fetch(`/api/payments/${id}`, { method: 'DELETE' });
           if (!res.ok) throw new Error('Failed to delete payment');
           toast.success('Pagesa u fshi me sukses');
-          fetchPayments();
-          fetchStats();
+          refreshAllData();
         } catch {
           toast.error('Fshirja e pagesës dështoi');
         } finally {
@@ -612,8 +643,7 @@ export default function VolleyballTeamManager() {
       });
       if (!res.ok) throw new Error('Failed to update payment');
       toast.success('Pagesa u shënua si e paguar');
-      fetchPayments();
-      fetchStats();
+      refreshAllData();
     } catch {
       toast.error('Përditësimi i pagesës dështoi');
     } finally {
@@ -633,6 +663,34 @@ export default function VolleyballTeamManager() {
   };
 
   const getInstallmentDueAmount = (p: Payment) => p.amount - (p.creditApplied ?? 0);
+
+  const getPaymentDueAmount = (p: Payment) => p.amount - (p.creditApplied ?? 0);
+
+  function PaymentDetailsTrigger({ payment }: { payment: Payment & { player: Player } }) {
+    return (
+      <ActionTooltip label="Detajet">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
+          onClick={() => setPaymentDetailsModalPayment(payment)}
+        >
+          <Info className="h-4 w-4" />
+        </Button>
+      </ActionTooltip>
+    );
+  }
+
+  function ActionTooltip({ children, label }: { children: React.ReactNode; label: string }) {
+    return (
+      <span className="relative inline-flex group/tt">
+        {children}
+        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-xs font-medium bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 rounded opacity-0 invisible group-hover/tt:opacity-100 group-hover/tt:visible transition-opacity whitespace-nowrap z-50 pointer-events-none shadow-md">
+          {label}
+        </span>
+      </span>
+    );
+  }
 
   const canMarkAsPaid = (payment: Payment & { player?: Player }, allPayments: (Payment & { player: Player })[]) => {
     if (!payment.planId || !payment.installmentNumber || payment.installmentNumber <= 1) return true;
@@ -664,8 +722,7 @@ export default function VolleyballTeamManager() {
       setInstallmentPaidModalOpen(false);
       setInstallmentPaymentForPaid(null);
       setInstallmentAmountPaidInput('');
-      fetchPayments();
-      fetchStats();
+      refreshAllData();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Përditësimi i pagesës dështoi');
     } finally {
@@ -758,7 +815,6 @@ export default function VolleyballTeamManager() {
     player?.team?.toLowerCase().includes(playerSearch.toLowerCase())
   );
 
-  // Generate year options
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
@@ -1318,138 +1374,23 @@ export default function VolleyballTeamManager() {
           <TabsContent value="payments" className="space-y-6">
             <Card>
               <CardHeader>
-                <div className="flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>
                     <CardTitle>Regjistri i Pagesave</CardTitle>
                     <CardDescription>Ndjekni statusin e pagesave mujore</CardDescription>
                   </div>
-                  <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:gap-2">
-                      <Popover open={paymentFilterPlayerOpen} onOpenChange={setPaymentFilterPlayerOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={paymentFilterPlayerOpen}
-                            className="w-full sm:w-40 justify-between font-normal h-9"
-                          >
-                            {paymentPlayerFilter === 'all'
-                              ? 'Të gjithë lojtarët'
-                              : (() => {
-                                  const p = players.find(x => x.id === paymentPlayerFilter);
-                                  return p ? `${p.name}${p.jerseyNumber ? ` (#${p.jerseyNumber})` : ''}` : 'Lojtari';
-                                })()}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                          <Command>
-                            <CommandInput placeholder="Kërko lojtar..." />
-                            <CommandList className="max-h-[180px]">
-                              <CommandEmpty>Nuk u gjet lojtar.</CommandEmpty>
-                              <CommandGroup>
-                                <CommandItem
-                                  value="të gjithë lojtarët all"
-                                  onSelect={() => {
-                                    setPaymentPlayerFilter('all');
-                                    setPaymentFilterPlayerOpen(false);
-                                  }}
-                                >
-                                  <Check className={`mr-2 h-4 w-4 ${paymentPlayerFilter === 'all' ? 'opacity-100' : 'opacity-0'}`} />
-                                  Të gjithë lojtarët
-                                </CommandItem>
-                                {players.map((player) => (
-                                  <CommandItem
-                                    key={player.id}
-                                    value={`${player.name} ${player.jerseyNumber ?? ''} ${player.team ?? ''}`}
-                                    onSelect={() => {
-                                      setPaymentPlayerFilter(player.id);
-                                      setPaymentFilterPlayerOpen(false);
-                                    }}
-                                  >
-                                    <Check className={`mr-2 h-4 w-4 ${paymentPlayerFilter === player.id ? 'opacity-100' : 'opacity-0'}`} />
-                                    {player.name} {player.jerseyNumber ? `(#${player.jerseyNumber})` : ''} {player.team ? ` · ${player.team}` : ''}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                      <Select value={paymentMonthFilter} onValueChange={setPaymentMonthFilter}>
-                        <SelectTrigger className="w-full sm:w-32">
-                          <SelectValue placeholder="Muaji" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Të gjithë</SelectItem>
-                          {MONTHS.map((month, index) => (
-                            <SelectItem key={index} value={(index + 1).toString()}>
-                              {month}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select value={paymentYearFilter} onValueChange={setPaymentYearFilter}>
-                        <SelectTrigger className="w-full sm:w-28">
-                          <SelectValue placeholder="Viti" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Të gjithë</SelectItem>
-                          {years.map((year) => (
-                            <SelectItem key={year} value={year.toString()}>
-                              {year}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
-                        <SelectTrigger className="w-full sm:w-32">
-                          <SelectValue placeholder="Statusi" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Të gjithë</SelectItem>
-                          <SelectItem value="paid">Paguar</SelectItem>
-                          <SelectItem value="pending">Në pritje</SelectItem>
-                          <SelectItem value="overdue">Vonë</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button onClick={() => { resetPaymentForm(); setEditingPayment(null); setPaymentDialogOpen(true); }} className="flex-1 sm:flex-initial">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Shto Pagesë
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="flex-1 sm:flex-initial"
-                        onClick={async () => {
-                          setOperationInProgress(true);
-                          try {
-                            const res = await fetch('/api/payments/generate-due', { method: 'POST' });
-                            const data = await res.json();
-                            if (!res.ok) throw new Error(data.error);
-                            toast.success(data.message || 'Faturat u gjeneruan');
-                            fetchPayments();
-                            fetchStats();
-                          } catch {
-                            toast.error('Gjenerimi i faturave dështoi');
-                          } finally {
-                            setOperationInProgress(false);
-                          }
-                        }}
-                      >
-                        <Calendar className="w-4 h-4 mr-2" />
-                        <span className="hidden sm:inline">Gjeneroni Faturat</span>
-                        <span className="sm:hidden">Gjenero</span>
-                      </Button>
-                    </div>
-                  </div>
+                  <Button
+                    onClick={() => { resetPaymentForm(); setEditingPayment(null); setPaymentDialogOpen(true); }}
+                    className="w-full sm:w-64 h-16 text-base sm:ml-auto"
+                  >
+                    <Plus className="w-5 h-5 mr-2" />
+                    Shto Pagesë
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                {payments.length === 0 ? (
-                  <div className="text-center py-12">
+                {payments.length === 0 && (
+                  <div className="sm:hidden text-center py-12">
                     <CreditCard className="w-16 h-16 mx-auto text-gray-300 mb-4" />
                     <p className="text-gray-500 mb-4">Nuk u gjetën regjistrime pagesash</p>
                     <Button onClick={() => { resetPaymentForm(); setEditingPayment(null); setPaymentDialogOpen(true); }}>
@@ -1457,11 +1398,10 @@ export default function VolleyballTeamManager() {
                       Shto Pagesën e Parë
                     </Button>
                   </div>
-                ) : (
-                  <>
-                    {/* Mobile Card Layout */}
-                    <div className="sm:hidden space-y-3">
-                      {payments.map((payment) => (
+                )}
+                {payments.length > 0 && (
+                  <div className="sm:hidden space-y-3">
+                    {payments.map((payment) => (
                         <div key={payment.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm">
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
@@ -1488,58 +1428,166 @@ export default function VolleyballTeamManager() {
                               )}
                             </div>
                             <div className="text-right">
-                              <div className="font-bold text-lg">{formatCurrency(payment.amount)}</div>
-                              {payment.paymentType === 'installment' && (payment.amountPaid != null || (payment.creditApplied ?? 0) > 0) && (
-                                <div className="text-xs text-gray-500">
-                                  {(payment.creditApplied ?? 0) > 0 && <span className="text-green-600">Kredi: {formatCurrency(payment.creditApplied!)}</span>}
-                                  {payment.amountPaid != null && <span className="ml-1">Paguar: {formatCurrency(payment.amountPaid)}</span>}
-                                </div>
-                              )}
+                              <div className="font-bold text-lg">{formatCurrency(getPaymentDueAmount(payment))}</div>
                             </div>
                           </div>
                           <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700">
                             <span className="text-xs text-gray-500">
                               {payment.dueDate ? `Afati: ${formatDateDisplay(payment.dueDate)}` : '-'}
                             </span>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 items-center">
+                              <PaymentDetailsTrigger payment={payment} />
                               {payment.status !== 'paid' && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-green-600"
-                                  disabled={!canMarkAsPaid(payment, payments)}
-                                  onClick={() => onMarkAsPaidClick(payment)}
-                                >
-                                  <CheckCircle className="w-4 h-4 mr-1" /> Paguar
-                                </Button>
+                                <ActionTooltip label="Shëno Paguar">
+                                  <Button size="sm" variant="outline" className="text-green-600" disabled={!canMarkAsPaid(payment, payments)} onClick={() => onMarkAsPaidClick(payment)}>
+                                    <CheckCircle className="w-4 h-4 mr-1" /> Paguar
+                                  </Button>
+                                </ActionTooltip>
                               )}
-                              <Button size="sm" variant="outline" onClick={() => openEditPayment(payment)}>
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                              <Button size="sm" variant="destructive" onClick={() => handleDeletePayment(payment.id)}>
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                              <ActionTooltip label="Ndrysho">
+                                <Button size="sm" variant="outline" onClick={() => openEditPayment(payment)}>
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                              </ActionTooltip>
+                              <ActionTooltip label="Fshi">
+                                <Button size="sm" variant="destructive" onClick={() => handleDeletePayment(payment.id)}>
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </ActionTooltip>
                             </div>
                           </div>
                         </div>
                       ))}
-                    </div>
-                    {/* Desktop Table Layout */}
-                    <div className="hidden sm:block overflow-x-auto">
-                    <Table>
-                      <TableHeader>
+                  </div>
+                )}
+                <div className="hidden sm:block overflow-x-auto">
+                  <Table>
+                    <TableHeader>
                         <TableRow>
-                          <TableHead>Lojtari</TableHead>
-                          <TableHead>Periudha</TableHead>
-                          <TableHead>Lloji</TableHead>
-                          <TableHead>Shuma</TableHead>
-                          <TableHead>Statusi</TableHead>
-                          <TableHead>Afati</TableHead>
-                          <TableHead className="text-right">Veprimet</TableHead>
+                          <TableHead className="align-top">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-medium">Lojtari</span>
+                              <Popover open={paymentFilterPlayerOpen} onOpenChange={setPaymentFilterPlayerOpen}>
+                                <PopoverTrigger asChild>
+                                  <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0">
+                                    <User className="h-4 w-4" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-56 p-0" align="start">
+                                  <Command>
+                                    <CommandInput placeholder="Kërko..." />
+                                    <CommandList className="max-h-48">
+                                      <CommandEmpty>Nuk u gjet.</CommandEmpty>
+                                      <CommandGroup>
+                                        <CommandItem value="all" onSelect={() => { setPaymentPlayerFilter('all'); setPaymentFilterPlayerOpen(false); }}>
+                                          <Check className={`mr-2 h-4 w-4 ${paymentPlayerFilter === 'all' ? 'opacity-100' : 'opacity-0'}`} />
+                                          Të gjithë
+                                        </CommandItem>
+                                        {players.map((player) => (
+                                          <CommandItem key={player.id} value={`${player.name} ${player.id}`} onSelect={() => { setPaymentPlayerFilter(player.id); setPaymentFilterPlayerOpen(false); }}>
+                                            <Check className={`mr-2 h-4 w-4 ${paymentPlayerFilter === player.id ? 'opacity-100' : 'opacity-0'}`} />
+                                            {player.name} {player.jerseyNumber ? `#${player.jerseyNumber}` : ''}
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    </CommandList>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                            {paymentPlayerFilter !== 'all' && (
+                              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                {players.find(x => x.id === paymentPlayerFilter)?.name ?? ''}
+                              </p>
+                            )}
+                          </TableHead>
+                          <TableHead className="align-top">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-medium">Periudha</span>
+                              <Popover open={paymentPeriodCalendarOpen} onOpenChange={setPaymentPeriodCalendarOpen}>
+                                <PopoverTrigger asChild>
+                                  <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0">
+                                    <Calendar className="h-4 w-4" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  <div className="p-2 border-b flex justify-end">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 text-xs"
+                                      onClick={() => {
+                                        setPaymentMonthFilter('all');
+                                        setPaymentYearFilter('all');
+                                        setPaymentPeriodCalendarOpen(false);
+                                      }}
+                                    >
+                                      Të gjithë
+                                    </Button>
+                                  </div>
+                                  <DatePicker
+                                    mode="single"
+                                    selected={paymentMonthFilter !== 'all' && paymentYearFilter !== 'all'
+                                      ? new Date(Number.parseInt(paymentYearFilter, 10), Number.parseInt(paymentMonthFilter, 10) - 1, 1)
+                                      : undefined}
+                                    onSelect={(date) => {
+                                      if (date) {
+                                        setPaymentMonthFilter(String(date.getMonth() + 1));
+                                        setPaymentYearFilter(String(date.getFullYear()));
+                                        setPaymentPeriodCalendarOpen(false);
+                                      }
+                                    }}
+                                    captionLayout="dropdown"
+                                    startMonth={new Date(currentYear - 2, 0, 1)}
+                                    endMonth={new Date(currentYear + 2, 11, 31)}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                            {paymentMonthFilter !== 'all' && paymentYearFilter !== 'all' && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {MONTHS[Number.parseInt(paymentMonthFilter, 10) - 1]} {paymentYearFilter}
+                              </p>
+                            )}
+                          </TableHead>
+                          <TableHead className="font-medium">Lloji</TableHead>
+                          <TableHead className="font-medium">Shuma</TableHead>
+                          <TableHead className="align-top">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-medium">Statusi</span>
+                              <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
+                                <SelectTrigger className="h-8 w-28 gap-1.5">
+                                  <ListFilter className="h-4 w-4 shrink-0 opacity-70" />
+                                  <SelectValue placeholder="Të gjithë" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="all">Të gjithë</SelectItem>
+                                  <SelectItem value="paid">Paguar</SelectItem>
+                                  <SelectItem value="pending">Në pritje</SelectItem>
+                                  <SelectItem value="overdue">Vonë</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </TableHead>
+                          <TableHead className="font-medium">Afati</TableHead>
+                          <TableHead className="text-right font-medium">Veprimet</TableHead>
                         </TableRow>
                       </TableHeader>
-                      <TableBody>
-                        {payments.map((payment) => (
+                    <TableBody>
+                      {payments.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-12">
+                            <CreditCard className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                            <p className="text-gray-500 mb-4">Nuk u gjetën regjistrime pagesash</p>
+                            <Button onClick={() => { resetPaymentForm(); setEditingPayment(null); setPaymentDialogOpen(true); }}>
+                              <Plus className="w-4 h-4 mr-2" />
+                              Shto Pagesën e Parë
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        payments.map((payment) => (
                           <TableRow key={payment.id}>
                             <TableCell className="font-medium">
                               <div className="flex items-center gap-2">
@@ -1550,76 +1598,59 @@ export default function VolleyballTeamManager() {
                             <TableCell>{MONTHS[payment.month - 1]} {payment.year}</TableCell>
                             <TableCell>
                               {payment.paymentType === 'installment' ? (
-                                <div>
-                                  <Badge variant="outline" className="text-xs border-blue-400 text-blue-600">
-                                    Këst {payment.installmentNumber}/{payment.totalInstallments}
-                                  </Badge>
-                                </div>
-                              ) : payment.paymentType === 'monthly' && payment.planId ? (
-                                <div>
-                                  <Badge variant="outline" className="text-xs border-orange-400 text-orange-600">
-                                    Mujore {payment.installmentNumber}/{payment.totalInstallments}
-                                  </Badge>
-                                </div>
-                              ) : (
-                                <Badge variant="outline" className="text-xs">
-                                  Mujore
+                                <Badge variant="outline" className="text-xs border-blue-400 text-blue-600">
+                                  Këst {payment.installmentNumber}/{payment.totalInstallments}
                                 </Badge>
+                              ) : payment.paymentType === 'monthly' && payment.planId ? (
+                                <Badge variant="outline" className="text-xs border-orange-400 text-orange-600">
+                                  Mujore {payment.installmentNumber}/{payment.totalInstallments}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs">Mujore</Badge>
                               )}
                             </TableCell>
                             <TableCell>
-                              <div className="font-semibold">{formatCurrency(payment.amount)}</div>
-                              {payment.paymentType === 'installment' && (payment.amountPaid != null || (payment.creditApplied ?? 0) > 0) && (
-                                <div className="text-xs text-gray-500">
-                                  {(payment.creditApplied ?? 0) > 0 && <span className="text-green-600">Kredi: {formatCurrency(payment.creditApplied!)}</span>}
-                                  {payment.amountPaid != null && <span className="ml-1">Paguar: {formatCurrency(payment.amountPaid)}</span>}
-                                </div>
-                              )}
+                              <div className="font-semibold">{formatCurrency(getPaymentDueAmount(payment))}</div>
                             </TableCell>
                             <TableCell>{getStatusBadge(payment.status)}</TableCell>
                             <TableCell>
-                              {payment.dueDate
-                                ? formatDateDisplay(payment.dueDate)
-                                : formatDateDisplay(payment.paidDate) || '-'}
+                              {payment.dueDate ? formatDateDisplay(payment.dueDate) : formatDateDisplay(payment.paidDate) || '-'}
                             </TableCell>
                             <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-2">
+                              <div className="flex items-center justify-end gap-1">
                                 {payment.status !== 'paid' && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="text-green-600 hover:text-green-700"
-                                    disabled={!canMarkAsPaid(payment, payments)}
-                                    onClick={() => onMarkAsPaidClick(payment)}
-                                  >
-                                    <CheckCircle className="w-4 h-4 mr-1" />
-                                    Shëno Paguar
-                                  </Button>
+                                  <ActionTooltip label="Shëno Paguar">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-green-600 hover:text-green-700"
+                                      disabled={!canMarkAsPaid(payment, payments)}
+                                      onClick={() => onMarkAsPaidClick(payment)}
+                                    >
+                                      <CheckCircle className="w-4 h-4 mr-1" />
+                                      Shëno Paguar
+                                    </Button>
+                                  </ActionTooltip>
                                 )}
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => openEditPayment(payment)}
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-red-500 hover:text-red-600"
-                                  onClick={() => handleDeletePayment(payment.id)}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
+                                <PaymentDetailsTrigger payment={payment} />
+                                <ActionTooltip label="Ndrysho">
+                                  <Button size="sm" variant="ghost" onClick={() => openEditPayment(payment)}>
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                </ActionTooltip>
+                                <ActionTooltip label="Fshi">
+                                  <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600" onClick={() => handleDeletePayment(payment.id)}>
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </ActionTooltip>
                               </div>
                             </TableCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                    </div>
-                  </>
-                )}
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -1797,7 +1828,7 @@ export default function VolleyballTeamManager() {
 
       {/* Payment Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={(open) => { setPaymentDialogOpen(open); if (!open) { setEditingPayment(null); setPlayerSelectOpen(false); setStartDatePickerOpen(false); setEndDatePickerOpen(false); setInstallmentDatePickerOpen(null); resetPaymentForm(); } }}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingPayment ? 'Përditëso Faturën' : 'Shto Pagesë të Re'}</DialogTitle>
             <DialogDescription>
@@ -2178,7 +2209,8 @@ export default function VolleyballTeamManager() {
                                         onSelect={(date) => {
                                           if (date) {
                                             const cfg = [...paymentForm.installmentConfig];
-                                            cfg[idx] = { endDate: format(date, 'yyyy-MM-dd') };
+                                            const prev = cfg[idx] as { endDate: string; amountPaid?: string; amount?: string; amountManuallySet?: boolean };
+                                            cfg[idx] = { endDate: format(date, 'yyyy-MM-dd'), amountPaid: prev?.amountPaid ?? '', amount: prev?.amount ?? '', amountManuallySet: prev?.amountManuallySet ?? false };
                                             setPaymentForm({ ...paymentForm, installmentConfig: cfg });
                                             setInstallmentDatePickerOpen(null);
                                           }
@@ -2192,7 +2224,71 @@ export default function VolleyballTeamManager() {
                                     </PopoverContent>
                                   </Popover>
                                   <span className="text-xs text-gray-500 w-24">Periudha: {periodMonth}</span>
-                                  <span className="text-sm font-medium">{formatCurrency(perInvoice)}</span>
+                                  <div className="flex flex-col gap-0.5 shrink-0">
+                                    <Label className="text-xs text-muted-foreground">Shuma (ALL)</Label>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      step={1}
+                                      className="h-8 w-24 text-xs"
+                                      value={(inst as { amount?: string }).amount ?? ''}
+                                      onChange={(e) => {
+                                        const cfg = [...paymentForm.installmentConfig];
+                                        const total = Number.parseFloat(String(paymentForm.totalAmount)) || 0;
+                                        const editedVal = Number.parseFloat(e.target.value.replace(/,/g, '.'));
+                                        const n = cfg.length;
+                                        const entryIdx = cfg[idx] as { endDate: string; amountPaid?: string; amount?: string; amountManuallySet?: boolean };
+                                        entryIdx.amount = e.target.value;
+                                        entryIdx.amountManuallySet = true;
+                                        if (n <= 1) {
+                                          setPaymentForm({ ...paymentForm, installmentConfig: cfg });
+                                          return;
+                                        }
+                                        if (!Number.isNaN(editedVal) && editedVal >= 0) {
+                                          let sumManuallySet = editedVal;
+                                          const autoIndices: number[] = [];
+                                          for (let j = 0; j < n; j++) {
+                                            if (j === idx) continue;
+                                            const ent = cfg[j] as { amount?: string; amountManuallySet?: boolean };
+                                            if (ent.amountManuallySet) {
+                                              const v = Number.parseFloat(ent.amount ?? '');
+                                              if (!Number.isNaN(v)) sumManuallySet += v;
+                                            } else {
+                                              autoIndices.push(j);
+                                            }
+                                          }
+                                          const remaining = Math.round((total - sumManuallySet) * 100) / 100;
+                                          const restCount = autoIndices.length;
+                                          if (restCount > 0) {
+                                            const restEach = Math.round((remaining / restCount) * 100) / 100;
+                                            const lastRest = Math.round((remaining - restEach * (restCount - 1)) * 100) / 100;
+                                            autoIndices.forEach((j, restIndex) => {
+                                              const entry = cfg[j] as { amount?: string };
+                                              entry.amount = restIndex < restCount - 1 ? String(restEach) : String(lastRest);
+                                            });
+                                          }
+                                        }
+                                        setPaymentForm({ ...paymentForm, installmentConfig: cfg });
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="flex flex-col gap-0.5 shrink-0">
+                                    <Label className="text-xs text-muted-foreground">Paguar paraprakisht</Label>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      step={1}
+                                      className="h-8 w-24 text-xs"
+                                      placeholder="0"
+                                      value={(inst as { amountPaid?: string }).amountPaid ?? ''}
+                                      onChange={(e) => {
+                                        const cfg = [...paymentForm.installmentConfig];
+                                        const prev = cfg[idx] as { endDate: string; amountPaid?: string; amount?: string; amountManuallySet?: boolean };
+                                        cfg[idx] = { ...prev, amountPaid: e.target.value };
+                                        setPaymentForm({ ...paymentForm, installmentConfig: cfg });
+                                      }}
+                                    />
+                                  </div>
                                 </div>
                               );
                             })}
@@ -2369,7 +2465,7 @@ export default function VolleyballTeamManager() {
                     <div>Shuma e faturës: {formatCurrency(due)}</div>
                     {paid > 0 && (
                       remaining > 0
-                        ? <div className="text-yellow-600">Mbetja: {formatCurrency(remaining)}</div>
+                        ? <div className="text-yellow-600">Mbetja: {formatCurrency(remaining)} (do të shtohet tek kësti tjetër)</div>
                         : remaining < 0
                           ? <div className="text-blue-600">Tepricë: {formatCurrency(Math.abs(remaining))} (do të aplikohet tek fatura tjetër)</div>
                           : <div className="text-green-600">Paguar plotësisht</div>
@@ -2396,6 +2492,40 @@ export default function VolleyballTeamManager() {
             <Button onClick={handleSubmitInstallmentPaid} disabled={!installmentAmountPaidInput.trim()}>
               Shëno Paguar
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!paymentDetailsModalPayment} onOpenChange={(open) => !open && setPaymentDetailsModalPayment(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Detajet e pagesës</DialogTitle>
+            <DialogDescription>
+              {paymentDetailsModalPayment && (
+                <>
+                  {paymentDetailsModalPayment.player?.name || 'I panjohur'}
+                  {paymentDetailsModalPayment.installmentNumber != null && paymentDetailsModalPayment.totalInstallments != null
+                    ? ` – Këst ${paymentDetailsModalPayment.installmentNumber}/${paymentDetailsModalPayment.totalInstallments}`
+                    : ''}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {paymentDetailsModalPayment && (
+            <div className="space-y-3 py-2 text-sm">
+              <div><span className="text-gray-500">Shuma e faturës:</span> {formatCurrency(paymentDetailsModalPayment.amount)}</div>
+              {(paymentDetailsModalPayment.creditApplied ?? 0) > 0 && (
+                <div className="text-green-600">Kredi e aplikuar: -{formatCurrency(paymentDetailsModalPayment.creditApplied ?? 0)}</div>
+              )}
+              <div className="font-medium border-t pt-2">Shuma për paguar: {formatCurrency(getPaymentDueAmount(paymentDetailsModalPayment))}</div>
+              <div><span className="text-gray-500">Afati:</span> {paymentDetailsModalPayment.dueDate ? formatDateDisplay(paymentDetailsModalPayment.dueDate) : '-'}</div>
+              {paymentDetailsModalPayment.amountPaid != null && (
+                <div><span className="text-gray-500">Paguar:</span> {formatCurrency(paymentDetailsModalPayment.amountPaid)}</div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setPaymentDetailsModalPayment(null)}>Mbyll</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

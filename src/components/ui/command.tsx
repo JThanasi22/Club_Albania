@@ -84,6 +84,7 @@ function CommandInput({
 
 function CommandList({
   className,
+  onWheel,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.List>) {
   return (
@@ -94,6 +95,10 @@ function CommandList({
         className
       )}
       {...props}
+      onWheel={(e) => {
+        e.stopPropagation();
+        onWheel?.(e);
+      }}
     />
   )
 }
