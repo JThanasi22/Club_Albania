@@ -140,6 +140,8 @@ export default function VolleyballTeamManager() {
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [viewingPlayer, setViewingPlayer] = useState<Player | null>(null);
   const [playerSearch, setPlayerSearch] = useState('');
+  const [playerPaymentFilter, setPlayerPaymentFilter] = useState('all');
+  const [playerPaymentSort, setPlayerPaymentSort] = useState('none');
 
   // Photo state
   const [playerPhoto, setPlayerPhoto] = useState<string | null>(null);
@@ -534,12 +536,35 @@ export default function VolleyballTeamManager() {
   };
 
   // Filter players
-  const filteredPlayers = (players || []).filter(player =>
-    player?.name?.toLowerCase().includes(playerSearch.toLowerCase()) ||
-    player?.email?.toLowerCase().includes(playerSearch.toLowerCase()) ||
-    player?.team?.toLowerCase().includes(playerSearch.toLowerCase()) ||
-    (player?.jerseyNumber != null && String(player.jerseyNumber).includes(playerSearch))
-  );
+  const filteredPlayers = (players || []).filter((player) => {
+    const searchTerm = playerSearch.toLowerCase();
+    const matchesSearch =
+      player?.name?.toLowerCase().includes(searchTerm) ||
+      player?.email?.toLowerCase().includes(searchTerm) ||
+      player?.team?.toLowerCase().includes(searchTerm) ||
+      (player?.jerseyNumber != null && String(player.jerseyNumber).includes(playerSearch));
+
+    const { amountLeft } = getPlayerPaymentSummary(player);
+    const matchesPaymentFilter =
+      playerPaymentFilter === 'all' ||
+      (playerPaymentFilter === 'withBalance' && amountLeft > 0) ||
+      (playerPaymentFilter === 'paid' && amountLeft === 0) ||
+      (playerPaymentFilter === 'credit' && amountLeft < 0);
+
+    return matchesSearch && matchesPaymentFilter;
+  });
+
+  const sortedPlayers = [...filteredPlayers].sort((a, b) => {
+    if (playerPaymentSort === 'highestBalance') {
+      return getPlayerPaymentSummary(b).amountLeft - getPlayerPaymentSummary(a).amountLeft;
+    }
+
+    if (playerPaymentSort === 'lowestBalance') {
+      return getPlayerPaymentSummary(a).amountLeft - getPlayerPaymentSummary(b).amountLeft;
+    }
+
+    return 0;
+  });
 
   // Get player avatar
   const getPlayerAvatar = (player: Player, size: 'sm' | 'md' | 'lg' = 'sm') => {
@@ -877,6 +902,27 @@ export default function VolleyballTeamManager() {
                         className="pl-10 w-full sm:w-64"
                       />
                     </div>
+                    <Select value={playerPaymentFilter} onValueChange={setPlayerPaymentFilter}>
+                      <SelectTrigger className="w-full sm:w-[220px]">
+                        <SelectValue placeholder="Filtro sipas pagesës" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Të gjithë</SelectItem>
+                        <SelectItem value="withBalance">Kanë shumë për të paguar</SelectItem>
+                        <SelectItem value="paid">Të paguar plotësisht</SelectItem>
+                        <SelectItem value="credit">Me tepricë</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={playerPaymentSort} onValueChange={setPlayerPaymentSort}>
+                      <SelectTrigger className="w-full sm:w-[220px]">
+                        <SelectValue placeholder="Rendit sipas shumës së mbetur" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Pa renditje</SelectItem>
+                        <SelectItem value="highestBalance">Shuma e mbetur: nga më e madhja</SelectItem>
+                        <SelectItem value="lowestBalance">Shuma e mbetur: nga më e vogla</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <Button onClick={() => { resetPlayerForm(); setEditingPlayer(null); setPlayerDialogOpen(true); }} className="w-full sm:w-auto">
                       <Plus className="w-4 h-4 mr-2" />
                       Shto Lojtar
@@ -885,7 +931,7 @@ export default function VolleyballTeamManager() {
                 </div>
               </CardHeader>
               <CardContent>
-                {filteredPlayers.length === 0 ? (
+                {sortedPlayers.length === 0 ? (
                   <div className="text-center py-12">
                     <Users className="w-16 h-16 mx-auto text-gray-300 mb-4" />
                     <p className="text-gray-500 mb-4">Nuk u gjetën lojtarë</p>
@@ -898,7 +944,7 @@ export default function VolleyballTeamManager() {
                   <>
                     {/* Mobile Card Layout */}
                     <div className="sm:hidden space-y-3">
-                      {filteredPlayers.map((player) => (
+                      {sortedPlayers.map((player) => (
                         <div key={player.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm">
                           <div className="flex items-start gap-3">
                             {getPlayerAvatar(player, 'lg')}
@@ -977,7 +1023,7 @@ export default function VolleyballTeamManager() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredPlayers.map((player) => (
+                        {sortedPlayers.map((player) => (
                           <TableRow key={player.id}>
                             <TableCell>
                               {getPlayerAvatar(player, 'md')}
