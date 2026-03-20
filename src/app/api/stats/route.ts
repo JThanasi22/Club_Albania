@@ -15,17 +15,19 @@ export async function GET() {
     const currentYear = currentDate.getFullYear();
 
     const players = await db.player.findMany({
-      where: { active: true },
       select: {
         id: true,
         name: true,
         team: true,
+        active: true,
         totalPayment: true,
         paymentHistory: true,
       },
     });
 
     const totalPlayers = players.length;
+    const activePlayerCount = players.filter((p) => p.active).length;
+    const inactivePlayerCount = totalPlayers - activePlayerCount;
     let totalExpected = 0;
     let amountCollectedAllTime = 0;
     const recentEntries: { amount: number; date: string; playerId: string; playerName: string }[] = [];
@@ -69,6 +71,8 @@ export async function GET() {
 
     return NextResponse.json({
       totalPlayers,
+      activePlayerCount,
+      inactivePlayerCount,
       totalExpectedAmount: totalExpected,
       amountCollectedAllTime,
       currentMonth: {

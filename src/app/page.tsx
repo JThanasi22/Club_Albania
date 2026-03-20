@@ -18,11 +18,16 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Users, TrendingUp, Calendar, Plus, Pencil, Trash2,
-  CheckCircle, UserPlus, CreditCard, Search,
-  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X
+  CheckCircle, UserPlus, CreditCard, Search, Wallet,
+  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, FileDown, MessageCircle
 } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { Calendar as DatePicker } from '@/components/ui/calendar';
+import {
+  normalizePhoneForWhatsApp,
+  buildPaymentReminderMessage,
+  getPaymentReminderWhatsAppHref,
+} from '@/lib/whatsappPaymentReminder';
 
 // Types
 interface PaymentEntry {
@@ -39,6 +44,7 @@ interface Player {
   jerseyNumber: number | null;
   photo: string | null;
   joinDate: string;
+  dateOfBirth?: string | null;
   active: boolean;
   totalPayment?: number;
   paymentHistory?: PaymentEntry[];
@@ -47,6 +53,8 @@ interface Player {
 
 interface Stats {
   totalPlayers: number;
+  activePlayerCount: number;
+  inactivePlayerCount: number;
   totalExpectedAmount?: number;
   amountCollectedAllTime?: number;
   currentMonth: {
@@ -181,6 +189,7 @@ export default function VolleyballTeamManager() {
     team: '',
     jerseyNumber: '',
     joinDate: new Date().toISOString().split('T')[0],
+    dateOfBirth: '',
     active: true,
     totalPayment: '',
   });
@@ -329,6 +338,46 @@ export default function VolleyballTeamManager() {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const handleDownloadPlayerPaymentPdf = async (player: Player) => {
+    setOperationInProgress(true);
+    try {
+      const res = await fetch(`/api/players/${player.id}/payment-pdf`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error || 'Gjenerimi i PDF dështoi');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const cd = res.headers.get('Content-Disposition');
+      const match = cd?.match(/filename="([^"]+)"/);
+      a.download = match?.[1] ?? `pagesat-${player.name.replace(/\s+/g, '_')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Gjenerimi i PDF dështoi');
+    } finally {
+      setOperationInProgress(false);
+    }
+  };
+
+  const buildReminderMessageForPlayer = (player: Player) => {
+    const { amountLeft } = getPlayerPaymentSummary(player);
+    const amt = formatCurrency(Math.max(0, amountLeft));
+    return buildPaymentReminderMessage(amt);
+  };
+
+  const openWhatsappPaymentReminder = (player: Player) => {
+    const digits = normalizePhoneForWhatsApp(player.phone);
+    if (!digits) return;
+    const msg = buildReminderMessageForPlayer(player);
+    const href = getPaymentReminderWhatsAppHref(digits, msg);
+    window.open(href, '_blank', 'noopener,noreferrer');
   };
 
   // Player CRUD operations
@@ -510,6 +559,7 @@ export default function VolleyballTeamManager() {
       team: '',
       jerseyNumber: '',
       joinDate: new Date().toISOString().split('T')[0],
+      dateOfBirth: '',
       active: true,
       totalPayment: '',
     });
@@ -528,6 +578,9 @@ export default function VolleyballTeamManager() {
       team: player.team || '',
       jerseyNumber: player.jerseyNumber?.toString() || '',
       joinDate: new Date(player.joinDate).toISOString().split('T')[0],
+      dateOfBirth: player.dateOfBirth
+        ? new Date(player.dateOfBirth).toISOString().split('T')[0]
+        : '',
       active: player.active,
       totalPayment: (player.totalPayment ?? 0) > 0 ? String(player.totalPayment) : '',
     });
@@ -753,15 +806,33 @@ export default function VolleyballTeamManager() {
           {/* Dashboard Tab */}
           <TabsContent value="dashboard" className="space-y-6">
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">Totali i Lojtarëve</CardTitle>
                   <Users className="w-5 h-5 text-blue-500" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white">{stats?.totalPlayers || 0}</div>
-                  <p className="text-xs text-gray-500 mt-1">Anëtarë aktivë të ekipit</p>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="min-w-0">
+                      <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white tabular-nums">
+                        {stats?.activePlayerCount ?? 0}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Aktiv</p>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white tabular-nums">
+                        {stats?.inactivePlayerCount ?? 0}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Joaktiv</p>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white tabular-nums">
+                        {stats?.totalPlayers ?? 0}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Gjithsej</p>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -801,6 +872,24 @@ export default function VolleyballTeamManager() {
                     {formatCurrency(stats?.allTime.totalExpected || 0)}
                   </div>
                   <p className="text-xs text-gray-500 mt-1">Shuma totale e pagesave</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">Mbetja për pagesë</CardTitle>
+                  <Wallet className="w-5 h-5 text-amber-600 dark:text-amber-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-xl font-bold text-gray-900 dark:text-white">
+                    {formatCurrency(
+                      Math.max(
+                        0,
+                        (stats?.allTime?.totalExpected ?? 0) - (stats?.allTime?.amountCollected ?? 0)
+                      )
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Totali pritshëm minus i arkëtuar</p>
                 </CardContent>
               </Card>
             </div>
@@ -958,6 +1047,9 @@ export default function VolleyballTeamManager() {
                               <div className="mt-1 text-sm text-gray-500 space-y-1">
                                 {player.team && <p>📍 {player.team}</p>}
                                 {player.jerseyNumber && <p>👕 Nr. {player.jerseyNumber}</p>}
+                                {player.dateOfBirth && (
+                                  <p>Datelindja: {formatDateDisplay(player.dateOfBirth)}</p>
+                                )}
                                 {player.email && <p className="truncate">✉️ {player.email}</p>}
                                 {player.phone && <p>📞 {player.phone}</p>}
                               </div>
@@ -968,13 +1060,17 @@ export default function VolleyballTeamManager() {
                                   <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 text-xs space-y-0.5">
                                     <p><span className="text-gray-500">Totali:</span> {formatCurrency(totalBills)}</p>
                                     <p><span className="text-gray-500">Paguar:</span> {formatCurrency(amountPaid)}</p>
-                                    <p>
-                                      <span className="text-gray-500">{isOverpaid ? 'Tepricë:' : amountLeft === 0 ? 'Paguar:' : 'Mbetur:'}</span>{' '}
-                                      <span className={isOverpaid ? 'text-green-600 dark:text-green-400' : amountLeft === 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                                        {isOverpaid ? `-${formatCurrency(Math.abs(amountLeft))}` : formatCurrency(amountLeft)}
-                                      </span>
-                                      {isOverpaid && <span className="ml-1 text-gray-500">Tepricë</span>}
-                                    </p>
+                                    {amountLeft === 0 ? (
+                                      <p className="text-green-600 dark:text-green-400 font-medium">Paguar Plotesisht</p>
+                                    ) : (
+                                      <p>
+                                        <span className="text-gray-500">{isOverpaid ? 'Tepricë:' : 'Mbetur:'}</span>{' '}
+                                        <span className={isOverpaid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                                          {isOverpaid ? `-${formatCurrency(Math.abs(amountLeft))}` : formatCurrency(amountLeft)}
+                                        </span>
+                                        {isOverpaid && <span className="ml-1 text-gray-500">Tepricë</span>}
+                                      </p>
+                                    )}
                                   </div>
                                 );
                               })()}
@@ -997,6 +1093,28 @@ export default function VolleyballTeamManager() {
                             <Button size="sm" variant="outline" onClick={() => setViewingPlayer(player)}>
                               <Eye className="w-4 h-4 mr-1" /> Shiko
                             </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDownloadPlayerPaymentPdf(player)}
+                              title="Shkarko PDF pagesash"
+                            >
+                              <FileDown className="w-4 h-4 mr-1" /> PDF
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!normalizePhoneForWhatsApp(player.phone)}
+                              onClick={() => openWhatsappPaymentReminder(player)}
+                              title={
+                                normalizePhoneForWhatsApp(player.phone)
+                                  ? 'WhatsApp te numri i lojtarit me mesazh të gatshëm'
+                                  : 'Shto numër telefoni'
+                              }
+                              className="border-green-600/50 text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-950/40 disabled:opacity-40"
+                            >
+                              <MessageCircle className="w-4 h-4 mr-1" /> WhatsApp
+                            </Button>
                             <Button size="sm" variant="outline" onClick={() => openEditPlayer(player)}>
                               <Pencil className="w-4 h-4 mr-1" /> Ndrysho
                             </Button>
@@ -1016,6 +1134,7 @@ export default function VolleyballTeamManager() {
                           <TableHead>Emri</TableHead>
                           <TableHead>Ekipi</TableHead>
                           <TableHead>Numri</TableHead>
+                          <TableHead>Datelindja</TableHead>
                           <TableHead>Kontakti</TableHead>
                           <TableHead>Faturat</TableHead>
                           <TableHead>Statusi</TableHead>
@@ -1033,6 +1152,9 @@ export default function VolleyballTeamManager() {
                             </TableCell>
                             <TableCell>{player.team || '-'}</TableCell>
                             <TableCell>{player.jerseyNumber || '-'}</TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {player.dateOfBirth ? formatDateDisplay(player.dateOfBirth) : '-'}
+                            </TableCell>
                             <TableCell>
                               <div className="text-sm">
                                 <div>{player.email || '-'}</div>
@@ -1047,13 +1169,17 @@ export default function VolleyballTeamManager() {
                                   <div className="text-sm min-w-[140px]">
                                     <div><span className="text-gray-500">Totali:</span> {formatCurrency(totalBills)}</div>
                                     <div><span className="text-gray-500">Paguar:</span> {formatCurrency(amountPaid)}</div>
-                                    <div>
-                                      <span className="text-gray-500">{isOverpaid ? 'Tepricë:' : amountLeft === 0 ? 'Paguar:' : 'Mbetur:'}</span>{' '}
-                                      <span className={isOverpaid ? 'text-green-600 dark:text-green-400 font-medium' : amountLeft === 0 ? 'text-green-600 dark:text-green-400 font-medium' : 'text-red-600 dark:text-red-400 font-medium'}>
-                                        {isOverpaid ? `-${formatCurrency(Math.abs(amountLeft))}` : formatCurrency(amountLeft)}
-                                      </span>
-                                      {isOverpaid && <span className="ml-1 text-gray-500 text-xs">Tepricë</span>}
-                                    </div>
+                                    {amountLeft === 0 ? (
+                                      <div className="text-green-600 dark:text-green-400 font-medium">Paguar Plotesisht</div>
+                                    ) : (
+                                      <div>
+                                        <span className="text-gray-500">{isOverpaid ? 'Tepricë:' : 'Mbetur:'}</span>{' '}
+                                        <span className={isOverpaid ? 'text-green-600 dark:text-green-400 font-medium' : 'text-red-600 dark:text-red-400 font-medium'}>
+                                          {isOverpaid ? `-${formatCurrency(Math.abs(amountLeft))}` : formatCurrency(amountLeft)}
+                                        </span>
+                                        {isOverpaid && <span className="ml-1 text-gray-500 text-xs">Tepricë</span>}
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })()}
@@ -1083,13 +1209,37 @@ export default function VolleyballTeamManager() {
                                   size="sm"
                                   variant="ghost"
                                   onClick={() => setViewingPlayer(player)}
+                                  title="Shiko"
                                 >
                                   <Eye className="w-4 h-4" />
                                 </Button>
                                 <Button
                                   size="sm"
                                   variant="ghost"
+                                  onClick={() => handleDownloadPlayerPaymentPdf(player)}
+                                  title="Shkarko PDF pagesash"
+                                >
+                                  <FileDown className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={!normalizePhoneForWhatsApp(player.phone)}
+                                  onClick={() => openWhatsappPaymentReminder(player)}
+                                  title={
+                                    normalizePhoneForWhatsApp(player.phone)
+                                      ? 'WhatsApp te lojtari me mesazh të gatshëm'
+                                      : 'Shto numër telefoni'
+                                  }
+                                  className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 disabled:opacity-30"
+                                >
+                                  <MessageCircle className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
                                   onClick={() => openEditPlayer(player)}
+                                  title="Ndrysho"
                                 >
                                   <Pencil className="w-4 h-4" />
                                 </Button>
@@ -1098,6 +1248,7 @@ export default function VolleyballTeamManager() {
                                   variant="ghost"
                                   className="text-red-500 hover:text-red-600"
                                   onClick={() => handleDeletePlayer(player.id)}
+                                  title="Fshi"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
@@ -1247,7 +1398,7 @@ export default function VolleyballTeamManager() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="joinDate">Data e Bashkimit</Label>
                 <Input
@@ -1258,6 +1409,15 @@ export default function VolleyballTeamManager() {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="dateOfBirth">Datelindja</Label>
+                <Input
+                  id="dateOfBirth"
+                  type="date"
+                  value={playerForm.dateOfBirth}
+                  onChange={(e) => setPlayerForm({ ...playerForm, dateOfBirth: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2 lg:col-span-1">
                 <Label htmlFor="active">Statusi</Label>
                 <Select
                   value={playerForm.active ? 'active' : 'inactive'}
@@ -1330,6 +1490,12 @@ export default function VolleyballTeamManager() {
                   <p className="font-medium">{formatDateDisplay(viewingPlayer.joinDate)}</p>
                 </div>
                 <div>
+                  <Label className="text-gray-500">Datelindja</Label>
+                  <p className="font-medium">
+                    {viewingPlayer.dateOfBirth ? formatDateDisplay(viewingPlayer.dateOfBirth) : '-'}
+                  </p>
+                </div>
+                <div>
                   <Label className="text-gray-500">Statusi</Label>
                   <Badge variant={viewingPlayer.active ? 'default' : 'secondary'}>
                     {viewingPlayer.active ? 'Aktiv' : 'Joaktiv'}
@@ -1350,13 +1516,17 @@ export default function VolleyballTeamManager() {
                       <span className="text-gray-500">Paguar:</span>
                       <span className="font-medium">{formatCurrency(amountPaid)}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">{isOverpaid ? 'Tepricë:' : amountLeft === 0 ? 'Paguar:' : 'Mbetur:'}</span>
-                      <span className={`font-medium ${isOverpaid ? 'text-green-600 dark:text-green-400' : amountLeft === 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {isOverpaid ? `-${formatCurrency(Math.abs(amountLeft))}` : formatCurrency(amountLeft)}
-                      </span>
-                      {isOverpaid && <span className="text-gray-500 text-sm">Tepricë</span>}
-                    </div>
+                    {amountLeft === 0 ? (
+                      <div className="font-medium text-green-600 dark:text-green-400">Paguar Plotesisht</div>
+                    ) : (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">{isOverpaid ? 'Tepricë:' : 'Mbetur:'}</span>
+                        <span className={`font-medium ${isOverpaid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {isOverpaid ? `-${formatCurrency(Math.abs(amountLeft))}` : formatCurrency(amountLeft)}
+                        </span>
+                        {isOverpaid && <span className="text-gray-500 text-sm">Tepricë</span>}
+                      </div>
+                    )}
                     {amountLeft > 0 && (
                       <Button
                         size="sm"
@@ -1366,6 +1536,25 @@ export default function VolleyballTeamManager() {
                         SHTO PAGESE
                       </Button>
                     )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full mt-2"
+                      onClick={() => handleDownloadPlayerPaymentPdf(viewingPlayer)}
+                    >
+                      <FileDown className="w-4 h-4 mr-2" />
+                      Shkarko PDF pagesash
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full mt-2 border-green-600/50 text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-950/40 disabled:opacity-40"
+                      disabled={!normalizePhoneForWhatsApp(viewingPlayer.phone)}
+                      onClick={() => openWhatsappPaymentReminder(viewingPlayer)}
+                    >
+                      <MessageCircle className="w-4 h-4 mr-2" />
+                      Njoftim pagese (WhatsApp)
+                    </Button>
                   </div>
                 );
               })()}

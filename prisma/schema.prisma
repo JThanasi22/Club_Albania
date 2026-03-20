@@ -19,6 +19,7 @@ model Player {
   jerseyNumber    Int?
   photo           String?   // Cloudinary URL
   joinDate        DateTime  @default(now())
+  dateOfBirth     DateTime? // Datelindja
   active          Boolean   @default(true)
   totalPayment    Float     @default(0)
   paymentHistory  Json?     // [{ amount: number, date: string }]

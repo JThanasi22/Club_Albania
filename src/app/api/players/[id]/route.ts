@@ -37,7 +37,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, email, phone, team, jerseyNumber, photo, joinDate, active, totalPayment, paymentHistory } = body;
+    const { name, email, phone, team, jerseyNumber, photo, joinDate, dateOfBirth, active, totalPayment, paymentHistory } = body;
 
     const existing = await db.player.findUnique({ where: { id } });
     if (!existing) {
@@ -58,6 +58,10 @@ export async function PUT(
       joinDate: joinDate ? new Date(joinDate) : undefined,
       active: active !== undefined ? active : undefined,
     };
+    if (dateOfBirth !== undefined) {
+      updateData.dateOfBirth =
+        dateOfBirth != null && String(dateOfBirth).trim() !== '' ? new Date(dateOfBirth) : null;
+    }
     if (totalPayment !== undefined) {
       const total = Number(totalPayment);
       updateData.totalPayment = Number.isNaN(total) ? 0 : Math.max(0, total);
