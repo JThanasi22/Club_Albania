@@ -30,7 +30,7 @@ export function buildPaymentReminderMessage(amountLeftFormatted: string, dueDate
     '',
     `Sjellim në vëmendjen tuaj pagesën e mbetur për Club Albania me vlerën: ${amountLeftFormatted}.`,
     '',
-    `Lutemi të kryeni pagesën brenda afatit të përcaktuar, deri më datë ${dueDateDDMMYYYY}.`,
+    `Lutemi të kryeni pagesën brenda afatit të përcaktuar ( në kontratën e sportistes )`,
     '',
     `Pagesa mund të kryhet në llogarinë bankare të komunikuar të Club Albania në BKT Bank, duke përcaktuar në përshkrim emrin e sportistes për të cilën bëhet pagesa. Gjithashtu, ju lutemi të na dërgoni një kopje të mandat pagesës në mënyrë elektronike përmes WhatsApp në numrin ${CLUB_WHATSAPP_NUMBER}.`,
     '',
