@@ -26,6 +26,7 @@ import { Calendar as DatePicker } from '@/components/ui/calendar';
 import {
   normalizePhoneForWhatsApp,
   buildPaymentReminderMessage,
+  formatDueDateForPaymentReminder,
   getPaymentReminderWhatsAppHref,
 } from '@/lib/whatsappPaymentReminder';
 
@@ -132,6 +133,44 @@ const getPlayerPaymentSummary = (player: Player) => {
   return { totalBills: total, amountPaid, amountLeft };
 };
 
+const WHATSAPP_PAYMENT_DUE_STORAGE_KEY = 'club-albania-whatsapp-payment-due-date';
+
+function isValidIsoYyyyMmDd(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+function getStoredWhatsappPaymentDueDate(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const v = localStorage.getItem(WHATSAPP_PAYMENT_DUE_STORAGE_KEY);
+    return v && isValidIsoYyyyMmDd(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistWhatsappPaymentDueDate(iso: string): void {
+  if (typeof window === 'undefined' || !isValidIsoYyyyMmDd(iso)) return;
+  try {
+    localStorage.setItem(WHATSAPP_PAYMENT_DUE_STORAGE_KEY, iso);
+  } catch {
+  }
+}
+
+function defaultPaymentDeadlineIsoYyyyMmDd(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const deadlineThisYear = new Date(y, 5, 30, 23, 59, 59, 999);
+  if (now <= deadlineThisYear) {
+    return `${y}-06-30`;
+  }
+  return `${y + 1}-06-30`;
+}
+
+function initialWhatsappDueDateForModal(): string {
+  return getStoredWhatsappPaymentDueDate() ?? defaultPaymentDeadlineIsoYyyyMmDd();
+}
+
 export default function VolleyballTeamManager() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [admin, setAdmin] = useState<AdminUser | null>(null);
@@ -172,6 +211,9 @@ export default function VolleyballTeamManager() {
     onConfirm: () => void;
     variant: 'default' | 'destructive';
   }>({ open: false, title: '', description: '', onConfirm: () => {}, variant: 'default' });
+
+  const [whatsappReminderPlayer, setWhatsappReminderPlayer] = useState<Player | null>(null);
+  const [whatsappReminderDueDate, setWhatsappReminderDueDate] = useState('');
 
   const showConfirmDialog = (
     title: string,
@@ -366,18 +408,28 @@ export default function VolleyballTeamManager() {
     }
   };
 
-  const buildReminderMessageForPlayer = (player: Player) => {
-    const { amountLeft } = getPlayerPaymentSummary(player);
-    const amt = formatCurrency(Math.max(0, amountLeft));
-    return buildPaymentReminderMessage(amt);
+  const openWhatsappPaymentReminder = (player: Player) => {
+    if (!normalizePhoneForWhatsApp(player.phone)) return;
+    setWhatsappReminderPlayer(player);
+    setWhatsappReminderDueDate(initialWhatsappDueDateForModal());
   };
 
-  const openWhatsappPaymentReminder = (player: Player) => {
-    const digits = normalizePhoneForWhatsApp(player.phone);
+  const confirmWhatsappPaymentReminder = () => {
+    if (!whatsappReminderPlayer || !whatsappReminderDueDate.trim()) {
+      toast.error('Zgjidhni datën e afatit');
+      return;
+    }
+    const digits = normalizePhoneForWhatsApp(whatsappReminderPlayer.phone);
     if (!digits) return;
-    const msg = buildReminderMessageForPlayer(player);
+    const { amountLeft } = getPlayerPaymentSummary(whatsappReminderPlayer);
+    const amt = formatCurrency(Math.max(0, amountLeft));
+    const dueDisplay = formatDueDateForPaymentReminder(whatsappReminderDueDate);
+    const msg = buildPaymentReminderMessage(amt, dueDisplay);
     const href = getPaymentReminderWhatsAppHref(digits, msg);
+    persistWhatsappPaymentDueDate(whatsappReminderDueDate);
     window.open(href, '_blank', 'noopener,noreferrer');
+    setWhatsappReminderPlayer(null);
+    setWhatsappReminderDueDate('');
   };
 
   // Player CRUD operations
@@ -1606,6 +1658,56 @@ export default function VolleyballTeamManager() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!whatsappReminderPlayer}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWhatsappReminderPlayer(null);
+            setWhatsappReminderDueDate('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Afati në mesazhin WhatsApp</DialogTitle>
+            <DialogDescription>
+              {whatsappReminderPlayer
+                ? `Zgjidhni datën që do të shfaqet te “deri më datë …” për ${whatsappReminderPlayer.name}.`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="whatsapp-reminder-due">Data e afatit të pagesës</Label>
+            <Input
+              id="whatsapp-reminder-due"
+              type="date"
+              value={whatsappReminderDueDate}
+              onChange={(e) => {
+                const v = e.target.value;
+                setWhatsappReminderDueDate(v);
+                if (v) persistWhatsappPaymentDueDate(v);
+              }}
+            />
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => {
+                setWhatsappReminderPlayer(null);
+                setWhatsappReminderDueDate('');
+              }}
+            >
+              Anulo
+            </Button>
+            <Button type="button" className="w-full sm:w-auto" onClick={confirmWhatsappPaymentReminder}>
+              Hap WhatsApp
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

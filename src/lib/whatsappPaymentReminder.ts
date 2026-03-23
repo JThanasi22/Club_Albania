@@ -18,18 +18,26 @@ export function normalizePhoneForWhatsApp(phone: string | null | undefined): str
   return null;
 }
 
-export function buildPaymentReminderMessage(amountLeftFormatted: string): string {
+export function formatDueDateForPaymentReminder(isoYyyyMmDd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoYyyyMmDd.trim());
+  if (!m) return isoYyyyMmDd.trim();
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+
+export function buildPaymentReminderMessage(amountLeftFormatted: string, dueDateDDMMYYYY: string): string {
   return [
-    'Njoftim pagese',
+    'Përshëndetje,',
     '',
-    'Pershendetje:',
-    `Sjellim ne vemendjen tuaj pagesen e mbetur per Club Albania me vleren: ${amountLeftFormatted}`,
+    `Sjellim në vëmendjen tuaj pagesën e mbetur për Club Albania me vlerën: ${amountLeftFormatted}.`,
     '',
-    `Lutemi te kryeni pagesen ne llogarine bankare te komunikuar te Club Albania ne BKT Bank: duke percaktuar ne pershkrim dhe emrin e sportistes per te cilen behet pagesa dhe nje kopje te mandat pageses na e dergoni elektronikisht nepermjet WhatsApp ne numrin ${CLUB_WHATSAPP_NUMBER}.`,
+    `Lutemi të kryeni pagesën brenda afatit të përcaktuar, deri më datë ${dueDateDDMMYYYY}.`,
     '',
-    'Duke ju falenderuar per mirekuptimin',
+    `Pagesa mund të kryhet në llogarinë bankare të komunikuar të Club Albania në BKT Bank, duke përcaktuar në përshkrim emrin e sportistes për të cilën bëhet pagesa. Gjithashtu, ju lutemi të na dërgoni një kopje të mandat pagesës në mënyrë elektronike përmes WhatsApp në numrin ${CLUB_WHATSAPP_NUMBER}.`,
+    '',
+    'Duke ju falënderuar për mirëkuptimin,',
     'Club Albania',
-    'Dite te mbare !',
+    '',
+    'Ditë të mbarë!',
   ].join('\n');
 }
 
