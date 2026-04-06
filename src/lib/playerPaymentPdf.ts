@@ -5,10 +5,16 @@ import sharp from 'sharp';
 type PaymentEntry = { amount: number; date: string };
 
 const TEAM_LOGO_FILENAME = 'logo-club-albania.png';
+const STAMP_FILENAME = 'stamp-club-albania.png';
 const LOGO_MAX_HEIGHT = 56;
 const PHOTO_BOX = 92;
 const TABLE_ROW_H = 22;
 const TABLE_HEADER_H = 24;
+
+// Footer layout constants (all in PDF points from page bottom)
+const FOOTER_SEP_Y = 50;   // separator line y
+const FOOTER_LINE1_Y = 36; // first footer text line
+const FOOTER_LINE2_Y = 25; // second footer text line
 
 export type PlayerPaymentPdfInput = {
   name: string;
@@ -66,6 +72,23 @@ async function loadLogoPngBytes(): Promise<Uint8Array | null> {
   return null;
 }
 
+async function loadStampPngBytes(): Promise<Uint8Array | null> {
+  const candidates = [
+    path.join(process.cwd(), 'public', STAMP_FILENAME),
+    path.join(process.cwd(), STAMP_FILENAME),
+  ];
+  for (const filePath of candidates) {
+    try {
+      const raw = await readFile(filePath);
+      const normalized = await sharp(raw).png({ compressionLevel: 9 }).toBuffer();
+      return new Uint8Array(normalized);
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 async function loadPlayerPhotoPng(photoUrl: string | null | undefined): Promise<Uint8Array | null> {
   if (!photoUrl || !/^https?:\/\//i.test(photoUrl)) return null;
   try {
@@ -83,9 +106,10 @@ async function loadPlayerPhotoPng(photoUrl: string | null | undefined): Promise<
 }
 
 export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): Promise<Uint8Array> {
-  const [{ PDFDocument, StandardFonts, rgb }, logoBytes, photoBytes] = await Promise.all([
+  const [{ PDFDocument, StandardFonts, rgb }, logoBytes, stampBytes, photoBytes] = await Promise.all([
     import('pdf-lib'),
     loadLogoPngBytes(),
+    loadStampPngBytes(),
     loadPlayerPhotoPng(input.photo),
   ]);
 
@@ -96,17 +120,74 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+  const fontBoldItalic = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
+
+  // Embed logo once for reuse in header and watermark
+  let logoPng: Awaited<ReturnType<typeof pdfDoc.embedPng>> | null = null;
+  if (logoBytes) {
+    try { logoPng = await pdfDoc.embedPng(logoBytes); } catch { /* skip */ }
+  }
+
+  // Embed stamp
+  let stampPng: Awaited<ReturnType<typeof pdfDoc.embedPng>> | null = null;
+  if (stampBytes) {
+    try { stampPng = await pdfDoc.embedPng(stampBytes); } catch { /* skip */ }
+  }
 
   const margin = 52;
   const pageWidth = 595;
   const pageHeight = 842;
   const contentW = pageWidth - margin * 2;
 
-  let page = pdfDoc.addPage([pageWidth, pageHeight]);
-  let y = pageHeight - margin;
+  // Footer text lines (using middle dot \xB7 which is in WinAnsi/Latin-1)
+  const FOOTER_LINE1 = 'Adresa: Shkolla 9-vje\xE7are "Vasil Shanto" Tirane \xB7 E-mail: clubalbania@fshv.org.al \xB7 Facebook: Club Albania \xB7';
+  const FOOTER_LINE2 = 'Instagram: Club.Albania \xB7 Cel - WhatsApp +355697091027';
 
-  const drawHLine = (yLine: number, fromX = margin, toX = pageWidth - margin) => {
-    page.drawLine({
+  /** Draw watermark and footer on a page — must be called right after addPage() so content renders on top. */
+  const drawPageBackground = (pg: ReturnType<typeof pdfDoc.addPage>) => {
+    // Watermark: large semi-transparent logo centered on the page
+    if (logoPng) {
+      const wmW = 340;
+      const wmH = (logoPng.height / logoPng.width) * wmW;
+      pg.drawImage(logoPng, {
+        x: (pageWidth - wmW) / 2,
+        y: (pageHeight - wmH) / 2,
+        width: wmW,
+        height: wmH,
+        opacity: 0.07,
+      });
+    }
+
+    // Footer separator line
+    pg.drawLine({
+      start: { x: margin, y: FOOTER_SEP_Y },
+      end: { x: pageWidth - margin, y: FOOTER_SEP_Y },
+      thickness: 0.5,
+      color: rgb(0.65, 0.65, 0.65),
+    });
+
+    // Footer text — centered, two lines
+    const l1w = font.widthOfTextAtSize(FOOTER_LINE1, 7);
+    pg.drawText(FOOTER_LINE1, {
+      x: (pageWidth - l1w) / 2,
+      y: FOOTER_LINE1_Y,
+      size: 7,
+      font,
+      color: rgb(0.38, 0.38, 0.38),
+    });
+    const l2w = font.widthOfTextAtSize(FOOTER_LINE2, 7);
+    pg.drawText(FOOTER_LINE2, {
+      x: (pageWidth - l2w) / 2,
+      y: FOOTER_LINE2_Y,
+      size: 7,
+      font,
+      color: rgb(0.38, 0.38, 0.38),
+    });
+  };
+
+  const drawHLine = (pg: ReturnType<typeof pdfDoc.addPage>, yLine: number, fromX = margin, toX = pageWidth - margin) => {
+    pg.drawLine({
       start: { x: fromX, y: yLine },
       end: { x: toX, y: yLine },
       thickness: 0.75,
@@ -114,38 +195,47 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
     });
   };
 
-  const centerText = (text: string, size: number, useBold: boolean, yPos: number) => {
-    const f = useBold ? fontBold : font;
+  const centerText = (
+    pg: ReturnType<typeof pdfDoc.addPage>,
+    text: string,
+    size: number,
+    f: typeof font,
+    yPos: number,
+    color = rgb(0.12, 0.12, 0.12),
+  ) => {
     const w = f.widthOfTextAtSize(text, size);
-    page.drawText(text, {
-      x: (pageWidth - w) / 2,
-      y: yPos,
-      size,
-      font: f,
-      color: rgb(0.12, 0.12, 0.12),
-    });
+    pg.drawText(text, { x: (pageWidth - w) / 2, y: yPos, size, font: f, color });
   };
 
-  if (logoBytes) {
-    try {
-      const png = await pdfDoc.embedPng(logoBytes);
-      const scale = LOGO_MAX_HEIGHT / png.height;
-      const imgW = png.width * scale;
-      const imgH = png.height * scale;
-      const imgX = (pageWidth - imgW) / 2;
-      const imgY = y - imgH;
-      page.drawImage(png, { x: imgX, y: imgY, width: imgW, height: imgH });
-      y = imgY - 12;
-    } catch {
-      y -= 4;
-    }
+  // ── First page ──────────────────────────────────────────────────────────────
+  let page = pdfDoc.addPage([pageWidth, pageHeight]);
+  drawPageBackground(page);
+  let y = pageHeight - margin;
+
+  // Header logo
+  if (logoPng) {
+    const scale = LOGO_MAX_HEIGHT / logoPng.height;
+    const imgW = logoPng.width * scale;
+    const imgH = logoPng.height * scale;
+    page.drawImage(logoPng, {
+      x: (pageWidth - imgW) / 2,
+      y: y - imgH,
+      width: imgW,
+      height: imgH,
+    });
+    y -= imgH + 6;
   }
 
-  drawHLine(y);
+  // Italic subtitle: Akademia e Volejbollit "CLUB ALBANIA"
+  const subtitle = 'Akademia e Volejbollit "CLUB ALBANIA"';
+  centerText(page, subtitle, 10, fontBoldItalic, y);
+  y -= 16;
+
+  drawHLine(page, y);
   y -= 22;
-  centerText('Përmbledhje e pagesave', 13, true, y);
+  centerText(page, 'P\xEBrmbledhje e pagesave', 13, fontBold, y);
   y -= 20;
-  drawHLine(y);
+  drawHLine(page, y);
   y -= 22;
 
   const photoX = margin;
@@ -175,13 +265,7 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
   const labelW = 118;
   let infoY = photoTop - 4;
   const infoLine = (label: string, value: string) => {
-    page.drawText(label, {
-      x: infoX,
-      y: infoY,
-      size: 9,
-      font: fontBold,
-      color: rgb(0.35, 0.35, 0.35),
-    });
+    page.drawText(label, { x: infoX, y: infoY, size: 9, font: fontBold, color: rgb(0.35, 0.35, 0.35) });
     page.drawText(value || '-', {
       x: infoX + labelW,
       y: infoY,
@@ -195,7 +279,7 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
 
   infoLine('Emri:', input.name);
   infoLine('Ekipi:', input.team || '-');
-  infoLine('Nr. fanellës:', input.jerseyNumber != null ? String(input.jerseyNumber) : '-');
+  infoLine('Nr. fanell\xEBs:', input.jerseyNumber != null ? String(input.jerseyNumber) : '-');
   infoLine('Email:', input.email || '-');
   infoLine('Telefoni:', input.phone || '-');
   infoLine('Datelindja:', input.dateOfBirth ? formatDisplayDate(datePart(input.dateOfBirth)) : '-');
@@ -204,7 +288,7 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
 
   y = Math.min(photoBottom - 12, infoY - 8);
 
-  drawHLine(y);
+  drawHLine(page, y);
   y -= 24;
 
   page.drawText('Historiku i pagesave', {
@@ -237,7 +321,7 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
       borderWidth: 1,
     });
     const textY = bottom + 8;
-    page.drawText('Data e pagesës', { x: margin + 10, y: textY, size: 10, font: fontBold, color: rgb(0.2, 0.2, 0.2) });
+    page.drawText('Data e pages\xEBs', { x: margin + 10, y: textY, size: 10, font: fontBold, color: rgb(0.2, 0.2, 0.2) });
     const hdr = 'Shuma (ALL)';
     const hw = fontBold.widthOfTextAtSize(hdr, 10);
     page.drawText(hdr, { x: margin + contentW - 10 - hw, y: textY, size: 10, font: fontBold, color: rgb(0.2, 0.2, 0.2) });
@@ -246,6 +330,7 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
 
   const startPaymentsContinuationPage = (): number => {
     page = pdfDoc.addPage([pageWidth, pageHeight]);
+    drawPageBackground(page);
     let py = pageHeight - margin;
     page.drawText('Historiku i pagesave (vazhdim)', {
       x: margin,
@@ -278,7 +363,7 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
       borderColor: LIGHT_BORDER,
       borderWidth: 1,
     });
-    page.drawText('Nuk ka pagesa të regjistruara.', {
+    page.drawText('Nuk ka pagesa t\xEB regjistruara.', {
       x: margin + 10,
       y: emptyBottom + 12,
       size: 10,
@@ -327,13 +412,14 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
   y = cursor - 32;
   if (y < margin + 160) {
     page = pdfDoc.addPage([pageWidth, pageHeight]);
+    drawPageBackground(page);
     y = pageHeight - margin;
   }
 
-  drawHLine(y);
+  drawHLine(page, y);
   y -= 22;
 
-  page.drawText('Përmbledhje financiare', {
+  page.drawText('P\xEBrmbledhje financiare', {
     x: margin,
     y,
     size: 11,
@@ -346,10 +432,10 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
     { label: 'Shuma totale e pritur:', value: formatMoney(total), color: rgb(0.1, 0.1, 0.1) },
     { label: 'Paguar deri tani:', value: formatMoney(paid), color: rgb(0.1, 0.1, 0.1) },
     left > 0
-      ? { label: 'Mbetja për të paguar:', value: formatMoney(left), color: rgb(0.65, 0.08, 0.08) }
+      ? { label: 'Mbetja p\xEBr t\xEB paguar:', value: formatMoney(left), color: rgb(0.65, 0.08, 0.08) }
       : left < 0
-        ? { label: 'Tepricë (mbi pagesë):', value: formatMoney(Math.abs(left)), color: rgb(0.05, 0.5, 0.12) }
-        : { label: 'Mbetja për të paguar:', value: '0 ALL', color: rgb(0.05, 0.5, 0.12) },
+        ? { label: 'Tepric\xEB (mbi pages\xEB):', value: formatMoney(Math.abs(left)), color: rgb(0.05, 0.5, 0.12) }
+        : { label: 'Mbetja p\xEBr t\xEB paguar:', value: '0 ALL', color: rgb(0.05, 0.5, 0.12) },
   ];
   const boxPad = 12;
   const sumBoxH = sumLines.length * 18 + boxPad * 2;
@@ -370,10 +456,43 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
     sy -= 18;
   }
 
-  y -= sumBoxH + 24;
-  page.drawText(`Gjeneruar më: ${formatDisplayDate(new Date().toISOString())}`, {
+  y -= sumBoxH + 28;
+
+  // Stamp block: thank-you text (17pt) + stamp image (80pt) + generated-at (24pt)
+  const STAMP_SIZE = 80;
+  const STAMP_BLOCK_H = 17 + STAMP_SIZE + 24;
+  const STAMP_BOTTOM_MIN = FOOTER_SEP_Y + 14; // must stay above footer
+
+  // If not enough vertical room, overflow to a new page
+  if (y - STAMP_BLOCK_H < STAMP_BOTTOM_MIN) {
+    page = pdfDoc.addPage([pageWidth, pageHeight]);
+    drawPageBackground(page);
+    y = pageHeight - margin;
+  }
+
+  const thankYou = 'Duke ju falenderuar p\xEBr bashk\xEBpunimi!';
+  const stampX = margin;
+  // thank-you text sits at y, stamp immediately below
+  const stampY = y - 17 - STAMP_SIZE;
+
+  page.drawText(thankYou, {
+    x: stampX,
+    y: y - 13,
+    size: 11,
+    font: fontBoldItalic,
+    color: rgb(0.05, 0.18, 0.55),
+  });
+
+  if (stampPng) {
+    const scale = STAMP_SIZE / Math.max(stampPng.width, stampPng.height);
+    const sw = stampPng.width * scale;
+    const sh = stampPng.height * scale;
+    page.drawImage(stampPng, { x: stampX, y: stampY, width: sw, height: sh });
+  }
+
+  page.drawText(`Gjeneruar m\xEB: ${formatDisplayDate(new Date().toISOString())}`, {
     x: margin,
-    y: Math.max(margin + 4, y),
+    y: Math.max(STAMP_BOTTOM_MIN, stampY - 16),
     size: 8,
     font,
     color: rgb(0.55, 0.55, 0.55),
