@@ -409,12 +409,26 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
     });
   }
 
-  y = cursor - 32;
-  if (y < margin + 160) {
+  const STAMP_SIZE = 80;
+  const STAMP_BOTTOM_MIN = FOOTER_SEP_Y + 14;
+  const STAMP_BASE_Y = STAMP_BOTTOM_MIN + 16;
+  const sumLines = [
+    { label: 'Shuma totale e pritur:', value: formatMoney(total), color: rgb(0.1, 0.1, 0.1) },
+    { label: 'Paguar deri tani:', value: formatMoney(paid), color: rgb(0.1, 0.1, 0.1) },
+    left > 0
+      ? { label: 'Mbetja p\xEBr t\xEB paguar:', value: formatMoney(left), color: rgb(0.65, 0.08, 0.08) }
+      : left < 0
+        ? { label: 'Tepric\xEB (mbi pages\xEB):', value: formatMoney(Math.abs(left)), color: rgb(0.05, 0.5, 0.12) }
+        : { label: 'Mbetja p\xEBr t\xEB paguar:', value: '0 ALL', color: rgb(0.05, 0.5, 0.12) },
+  ];
+  const boxPad = 12;
+  const sumBoxH = sumLines.length * 18 + boxPad * 2;
+  const yFinanceHLine = STAMP_BASE_Y + sumBoxH + STAMP_SIZE + 89;
+  if (yFinanceHLine > cursor - 32) {
     page = pdfDoc.addPage([pageWidth, pageHeight]);
     drawPageBackground(page);
-    y = pageHeight - margin;
   }
+  y = yFinanceHLine;
 
   drawHLine(page, y);
   y -= 22;
@@ -428,17 +442,6 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
   });
   y -= 22;
 
-  const sumLines = [
-    { label: 'Shuma totale e pritur:', value: formatMoney(total), color: rgb(0.1, 0.1, 0.1) },
-    { label: 'Paguar deri tani:', value: formatMoney(paid), color: rgb(0.1, 0.1, 0.1) },
-    left > 0
-      ? { label: 'Mbetja p\xEBr t\xEB paguar:', value: formatMoney(left), color: rgb(0.65, 0.08, 0.08) }
-      : left < 0
-        ? { label: 'Tepric\xEB (mbi pages\xEB):', value: formatMoney(Math.abs(left)), color: rgb(0.05, 0.5, 0.12) }
-        : { label: 'Mbetja p\xEBr t\xEB paguar:', value: '0 ALL', color: rgb(0.05, 0.5, 0.12) },
-  ];
-  const boxPad = 12;
-  const sumBoxH = sumLines.length * 18 + boxPad * 2;
   page.drawRectangle({
     x: margin,
     y: y - sumBoxH,
@@ -457,18 +460,6 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
   }
 
   y -= sumBoxH + 28;
-
-  // Stamp block: thank-you text (17pt) + stamp image (80pt) + generated-at (24pt)
-  const STAMP_SIZE = 80;
-  const STAMP_BLOCK_H = 17 + STAMP_SIZE + 24;
-  const STAMP_BOTTOM_MIN = FOOTER_SEP_Y + 14; // must stay above footer
-
-  // If not enough vertical room, overflow to a new page
-  if (y - STAMP_BLOCK_H < STAMP_BOTTOM_MIN) {
-    page = pdfDoc.addPage([pageWidth, pageHeight]);
-    drawPageBackground(page);
-    y = pageHeight - margin;
-  }
 
   const thankYou = 'Duke ju falenderuar p\xEBr bashk\xEBpunimi!';
   const stampX = margin;
