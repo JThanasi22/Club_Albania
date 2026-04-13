@@ -423,7 +423,8 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
   ];
   const boxPad = 12;
   const sumBoxH = sumLines.length * 18 + boxPad * 2;
-  const yFinanceHLine = STAMP_BASE_Y + sumBoxH + STAMP_SIZE + 89;
+  const SUM_BOX_TO_STAMP_GAP = 14;
+  const yFinanceHLine = STAMP_BASE_Y + sumBoxH + STAMP_SIZE + 44 + SUM_BOX_TO_STAMP_GAP + 17;
   if (yFinanceHLine > cursor - 32) {
     page = pdfDoc.addPage([pageWidth, pageHeight]);
     drawPageBackground(page);
@@ -459,7 +460,7 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
     sy -= 18;
   }
 
-  y -= sumBoxH + 28;
+  y -= sumBoxH + SUM_BOX_TO_STAMP_GAP;
 
   const thankYou = 'Duke ju falenderuar p\xEBr bashk\xEBpunimi!';
   const stampX = margin;
