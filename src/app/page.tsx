@@ -29,12 +29,7 @@ import {
   formatDueDateForPaymentReminder,
   getPaymentReminderWhatsAppHref,
 } from '@/lib/whatsappPaymentReminder';
-
-// Types
-interface PaymentEntry {
-  amount: number;
-  date: string;
-}
+import { getPlayerPaymentSummary, type PaymentEntry } from '@/lib/playerPaymentSummary';
 
 interface Player {
   id: string;
@@ -123,14 +118,6 @@ const formatDateDisplay = (val: string | Date | null | undefined): string => {
   const d = typeof val === 'string' ? new Date(val) : val;
   if (Number.isNaN(d.getTime())) return '';
   return format(d, 'dd/MM/yyyy');
-};
-
-const getPlayerPaymentSummary = (player: Player) => {
-  const total = Number(player.totalPayment) || 0;
-  const history = player.paymentHistory ?? [];
-  const amountPaid = history.reduce((sum, e) => sum + (e?.amount ?? 0), 0);
-  const amountLeft = total - amountPaid;
-  return { totalBills: total, amountPaid, amountLeft };
 };
 
 function defaultPaymentDeadlineIsoYyyyMmDd(): string {
