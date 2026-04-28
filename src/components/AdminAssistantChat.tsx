@@ -13,14 +13,60 @@ type ChatMessage =
   | { role: 'assistant'; content: string; artifacts?: AdminChatArtifact[] };
 
 export function AdminAssistantChat() {
+  const FAB_SIZE = 48;
+  const FAB_MARGIN = 16;
+  const FAB_POSITION_STORAGE_KEY = 'admin-assistant-fab-position';
+  const FAB_SIDE_LEFT = 'left';
+  const FAB_SIDE_RIGHT = 'right';
+  type FabSide = typeof FAB_SIDE_LEFT | typeof FAB_SIDE_RIGHT;
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
+  const [fabPosition, setFabPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isFabDragging, setIsFabDragging] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressOpenRef = useRef(false);
   const l = getAssistantChatLabels();
+
+  const clampFabPosition = useCallback((x: number, y: number) => {
+    if (typeof window === 'undefined') return { x, y };
+    const maxX = Math.max(FAB_MARGIN, window.innerWidth - FAB_SIZE - FAB_MARGIN);
+    const maxY = Math.max(FAB_MARGIN, window.innerHeight - FAB_SIZE - FAB_MARGIN);
+    return {
+      x: Math.min(Math.max(FAB_MARGIN, x), maxX),
+      y: Math.min(Math.max(FAB_MARGIN, y), maxY),
+    };
+  }, []);
+
+  const getFabXForSide = useCallback((side: FabSide) => {
+    if (typeof window === 'undefined') return FAB_MARGIN;
+    return side === FAB_SIDE_LEFT ? FAB_MARGIN : Math.max(FAB_MARGIN, window.innerWidth - FAB_SIZE - FAB_MARGIN);
+  }, []);
+
+  const getNearestSide = useCallback((x: number): FabSide => {
+    if (typeof window === 'undefined') return FAB_SIDE_RIGHT;
+    const centerX = x + FAB_SIZE / 2;
+    return centerX < window.innerWidth / 2 ? FAB_SIDE_LEFT : FAB_SIDE_RIGHT;
+  }, []);
+
+  const createFabPosition = useCallback(
+    (y: number, side: FabSide) => {
+      const clamped = clampFabPosition(getFabXForSide(side), y);
+      return { x: getFabXForSide(side), y: clamped.y };
+    },
+    [clampFabPosition, getFabXForSide]
+  );
 
   useEffect(() => {
     if (!open || minimized) return;
@@ -54,6 +100,83 @@ export function AdminAssistantChat() {
       document.body.style.paddingRight = '';
     };
   }, [open, minimized]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(FAB_POSITION_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { y?: unknown; side?: unknown };
+        if (
+          typeof parsed.y === 'number' &&
+          (parsed.side === FAB_SIDE_LEFT || parsed.side === FAB_SIDE_RIGHT)
+        ) {
+          setFabPosition(createFabPosition(parsed.y, parsed.side));
+          return;
+        }
+      }
+    } catch {}
+    setFabPosition(createFabPosition(FAB_MARGIN, FAB_SIDE_RIGHT));
+  }, [createFabPosition]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !fabPosition) return;
+    window.localStorage.setItem(
+      FAB_POSITION_STORAGE_KEY,
+      JSON.stringify({ y: fabPosition.y, side: getNearestSide(fabPosition.x) })
+    );
+  }, [fabPosition]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => {
+      setFabPosition((prev) => {
+        if (!prev) return prev;
+        return createFabPosition(prev.y, getNearestSide(prev.x));
+      });
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [createFabPosition, getNearestSide]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onPointerMove = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const dx = event.clientX - drag.startX;
+      const dy = event.clientY - drag.startY;
+      if (!drag.moved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+        drag.moved = true;
+      }
+      const next = clampFabPosition(drag.originX + dx, drag.originY + dy);
+      setFabPosition(next);
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      if (drag.moved) {
+        suppressOpenRef.current = true;
+        setIsFabDragging(false);
+        setFabPosition((prev) => {
+          if (!prev) return prev;
+          const side = getNearestSide(prev.x);
+          return createFabPosition(prev.y, side);
+        });
+      } else {
+        setIsFabDragging(false);
+      }
+      dragRef.current = null;
+    };
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [clampFabPosition, createFabPosition, getNearestSide]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -117,6 +240,10 @@ export function AdminAssistantChat() {
   };
 
   const handleOpenFab = () => {
+    if (suppressOpenRef.current) {
+      suppressOpenRef.current = false;
+      return;
+    }
     setOpen(true);
     setMinimized(false);
   };
@@ -126,10 +253,24 @@ export function AdminAssistantChat() {
       <button
         type="button"
         onClick={handleOpenFab}
+        onPointerDown={(event) => {
+          if (fabPosition === null) return;
+          setIsFabDragging(true);
+          dragRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            originX: fabPosition.x,
+            originY: fabPosition.y,
+            moved: false,
+          };
+        }}
         className={cn(
-          'fixed top-4 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-orange-500 text-white shadow-lg ring-2 ring-orange-200/80 transition hover:bg-orange-600 focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:outline-none dark:ring-orange-900/50',
+          'fixed z-40 flex h-12 w-12 touch-none items-center justify-center rounded-full bg-orange-500 text-white shadow-lg ring-2 ring-orange-200/80 hover:bg-orange-600 focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:outline-none dark:ring-orange-900/50',
+          isFabDragging ? 'transition-none' : 'transition-all duration-200 ease-out',
           open && !minimized && 'pointer-events-none opacity-0'
         )}
+        style={fabPosition ? { left: `${fabPosition.x}px`, top: `${fabPosition.y}px` } : undefined}
         aria-label={l.openChat}
       >
         <Bot className="h-6 w-6" aria-hidden />
