@@ -6,6 +6,8 @@ type PaymentEntry = { amount: number; date: string };
 
 const TEAM_LOGO_FILENAME = 'logo-club-albania.png';
 const STAMP_FILENAME = 'stamp-club-albania.png';
+
+const DEJAVU_SANS_TTF_DIR = path.join(process.cwd(), 'node_modules', 'dejavu-fonts-ttf', 'ttf');
 const LOGO_MAX_HEIGHT = 56;
 const PHOTO_BOX = 92;
 const TABLE_ROW_H = 22;
@@ -48,6 +50,7 @@ function datePart(val: Date | string | null | undefined): string {
 
 export function slugifyForFilename(name: string): string {
   const s = name
+    .normalize('NFC')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-zA-Z0-9]+/g, '_')
@@ -106,11 +109,26 @@ async function loadPlayerPhotoPng(photoUrl: string | null | undefined): Promise<
 }
 
 export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): Promise<Uint8Array> {
-  const [{ PDFDocument, StandardFonts, rgb }, logoBytes, stampBytes, photoBytes] = await Promise.all([
+  const [
+    { PDFDocument, rgb },
+    logoBytes,
+    stampBytes,
+    photoBytes,
+    fontRegularBytes,
+    fontBoldBytes,
+    fontItalicBytes,
+    fontBoldItalicBytes,
+    fontkit,
+  ] = await Promise.all([
     import('pdf-lib'),
     loadLogoPngBytes(),
     loadStampPngBytes(),
     loadPlayerPhotoPng(input.photo),
+    readFile(path.join(DEJAVU_SANS_TTF_DIR, 'DejaVuSans.ttf')),
+    readFile(path.join(DEJAVU_SANS_TTF_DIR, 'DejaVuSans-Bold.ttf')),
+    readFile(path.join(DEJAVU_SANS_TTF_DIR, 'DejaVuSans-Oblique.ttf')),
+    readFile(path.join(DEJAVU_SANS_TTF_DIR, 'DejaVuSans-BoldOblique.ttf')),
+    import('@pdf-lib/fontkit').then((m) => m.default),
   ]);
 
   const LIGHT_BORDER = rgb(0.72, 0.72, 0.72);
@@ -118,10 +136,13 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
   const ALT_ROW = rgb(0.985, 0.985, 0.985);
 
   const pdfDoc = await PDFDocument.create();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
-  const fontBoldItalic = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
+  pdfDoc.registerFontkit(fontkit);
+  const [font, fontBold, fontItalic, fontBoldItalic] = await Promise.all([
+    pdfDoc.embedFont(fontRegularBytes),
+    pdfDoc.embedFont(fontBoldBytes),
+    pdfDoc.embedFont(fontItalicBytes),
+    pdfDoc.embedFont(fontBoldItalicBytes),
+  ]);
 
   // Embed logo once for reuse in header and watermark
   let logoPng: Awaited<ReturnType<typeof pdfDoc.embedPng>> | null = null;
@@ -277,11 +298,16 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
     infoY -= 14;
   };
 
-  infoLine('Emri:', input.name);
-  infoLine('Ekipi:', input.team || '-');
+  const displayName = String(input.name).normalize('NFC');
+  const displayTeam = input.team != null ? String(input.team).normalize('NFC') : '';
+  const displayEmail = input.email != null ? String(input.email).normalize('NFC') : '';
+  const displayPhone = input.phone != null ? String(input.phone).normalize('NFC') : '';
+
+  infoLine('Emri:', displayName);
+  infoLine('Ekipi:', displayTeam || '-');
   infoLine('Nr. fanell\xEBs:', input.jerseyNumber != null ? String(input.jerseyNumber) : '-');
-  infoLine('Email:', input.email || '-');
-  infoLine('Telefoni:', input.phone || '-');
+  infoLine('Email:', displayEmail || '-');
+  infoLine('Telefoni:', displayPhone || '-');
   infoLine('Datelindja:', input.dateOfBirth ? formatDisplayDate(datePart(input.dateOfBirth)) : '-');
   infoLine('Data e bashkimit:', formatDisplayDate(datePart(input.joinDate)));
   infoLine('Statusi:', input.active ? 'Aktiv' : 'Joaktiv');

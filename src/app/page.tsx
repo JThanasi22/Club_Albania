@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type MouseEvent } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -341,27 +341,49 @@ export default function VolleyballTeamManager() {
   const handleDownloadPlayerPaymentPdf = async (player: Player) => {
     setOperationInProgress(true);
     try {
-      const res = await fetch(`/api/players/${player.id}/payment-pdf`);
+      const res = await fetch(`/api/players/${player.id}/payment-pdf`, {
+        method: 'GET',
+        cache: 'no-store',
+        credentials: 'include',
+        headers: { Accept: 'application/pdf' },
+      });
+      const contentType = res.headers.get('content-type') ?? '';
       if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error || 'Gjenerimi i PDF dështoi');
+        let msg = 'Gjenerimi i PDF dështoi';
+        if (contentType.includes('application/json')) {
+          const err = (await res.json().catch(() => ({}))) as { error?: string };
+          if (err.error) msg = err.error;
+        }
+        throw new Error(msg);
+      }
+      if (!contentType.includes('application/pdf') && !contentType.includes('application/octet-stream')) {
+        throw new Error('Gjenerimi i PDF dështoi');
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = objectUrl;
       const cd = res.headers.get('Content-Disposition');
       const match = cd?.match(/filename="([^"]+)"/);
       a.download = match?.[1] ?? `pagesat-${player.name.replace(/\s+/g, '_')}.pdf`;
+      a.rel = 'noopener';
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+      }, 30_000);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Gjenerimi i PDF dështoi');
     } finally {
       setOperationInProgress(false);
     }
+  };
+
+  const onPlayerPaymentPdfClick = (player: Player) => (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void handleDownloadPlayerPaymentPdf(player);
   };
 
   const openWhatsappPaymentReminder = (player: Player) => {
@@ -1089,9 +1111,10 @@ export default function VolleyballTeamManager() {
                               <Eye className="w-4 h-4 mr-1" /> Shiko
                             </Button>
                             <Button
+                              type="button"
                               size="sm"
                               variant="outline"
-                              onClick={() => handleDownloadPlayerPaymentPdf(player)}
+                              onClick={onPlayerPaymentPdfClick(player)}
                               title="Shkarko PDF pagesash"
                             >
                               <FileDown className="w-4 h-4 mr-1" /> PDF
@@ -1209,9 +1232,10 @@ export default function VolleyballTeamManager() {
                                   <Eye className="w-4 h-4" />
                                 </Button>
                                 <Button
+                                  type="button"
                                   size="sm"
                                   variant="ghost"
-                                  onClick={() => handleDownloadPlayerPaymentPdf(player)}
+                                  onClick={onPlayerPaymentPdfClick(player)}
                                   title="Shkarko PDF pagesash"
                                 >
                                   <FileDown className="w-4 h-4" />
@@ -1532,10 +1556,11 @@ export default function VolleyballTeamManager() {
                       </Button>
                     )}
                     <Button
+                      type="button"
                       size="sm"
                       variant="outline"
                       className="w-full mt-2"
-                      onClick={() => handleDownloadPlayerPaymentPdf(viewingPlayer)}
+                      onClick={onPlayerPaymentPdfClick(viewingPlayer)}
                     >
                       <FileDown className="w-4 h-4 mr-2" />
                       Shkarko PDF pagesash
