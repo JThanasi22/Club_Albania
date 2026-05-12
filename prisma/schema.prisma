@@ -60,3 +60,28 @@ model Admin {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model TeamFormation {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  teamName  String   @unique
+  slots     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TeamMatch {
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  teamName        String
+  matchDate       DateTime
+  opponent        String
+  venue           String?
+  isHome          Boolean   @default(true)
+  ourScore        Int?
+  theirScore      Int?
+  volleyballSets  Json?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([teamName])
+}

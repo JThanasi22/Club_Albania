@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef, type MouseEvent } from 'react';
+import { useState, useEffect, useRef, useMemo, type MouseEvent } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -19,9 +21,10 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Users, TrendingUp, Calendar, Plus, Pencil, Trash2,
   CheckCircle, UserPlus, CreditCard, Search, Wallet,
-  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, FileDown, MessageCircle
+  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, FileDown, MessageCircle, LayoutGrid, Image as ImageIcon
 } from 'lucide-react';
 import { format, parse } from 'date-fns';
+import { sq as dateFnsSq } from 'date-fns/locale/sq';
 import { Calendar as DatePicker } from '@/components/ui/calendar';
 import {
   normalizePhoneForWhatsApp,
@@ -30,6 +33,17 @@ import {
   getPaymentReminderWhatsAppHref,
 } from '@/lib/whatsappPaymentReminder';
 import { getPlayerPaymentSummary, type PaymentEntry } from '@/lib/playerPaymentSummary';
+import { getDashboardLang } from '@/lang/dashboard';
+import { getTeamsLang } from '@/lang/teams';
+import { parseFormationSlots, type FormationSlot } from '@/lib/teamFormation';
+import {
+  parseVolleyballSets,
+  formatVolleyballSetsSummary,
+  parseSetDraftRows,
+} from '@/lib/volleyballMatchSets';
+import { cn } from '@/lib/utils';
+import MatchResultGraphic from '@/components/MatchResultGraphic';
+import { buildMatchResultDataFromRow } from '@/lib/cloudinary-utils';
 
 interface Player {
   id: string;
@@ -77,12 +91,33 @@ interface Stats {
   };
   recentPayments: { id: string; amount: number; paidDate: string; player: { id: string; name: string } }[];
   playersWithUnpaidBills: Player[];
+  teamMatches: {
+    id: string;
+    teamName: string;
+    matchDate: string;
+    opponent: string;
+    isHome: boolean;
+    venue: string | null;
+  }[];
 }
 
 interface AdminUser {
   id: string;
   username: string;
   name: string | null;
+}
+
+interface TeamMatchRow {
+  id: string;
+  teamName: string;
+  matchDate: string;
+  opponent: string;
+  venue: string | null;
+  isHome: boolean;
+  ourScore: number | null;
+  theirScore: number | null;
+  volleyballSets?: unknown;
+  notes: string | null;
 }
 
 const MONTHS = [
@@ -93,6 +128,11 @@ const MONTHS = [
 const TEAMS = [
   'U20', 'U18', 'U16', 'U14', 'U10'
 ];
+
+const DASHBOARD_CARD_MODAL_HINT_MIN_ITEMS = 6;
+
+const dl = getDashboardLang('sq');
+const teamsL = getTeamsLang('sq');
 
 // Format currency in ALL (Albanian Lek)
 const formatCurrency = (amount: number) => {
@@ -119,6 +159,23 @@ const formatDateDisplay = (val: string | Date | null | undefined): string => {
   if (Number.isNaN(d.getTime())) return '';
   return format(d, 'dd/MM/yyyy');
 };
+
+function localDayKeyFromMatchIso(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return format(d, 'yyyy-MM-dd');
+}
+
+function isTeamMatchFinished(matchDateIso: string): boolean {
+  const d = new Date(matchDateIso);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  const startMatch = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const startNow = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return startNow >= startMatch;
+}
+
+const MAX_VOLLEY_SETS = 5;
 
 function defaultPaymentDeadlineIsoYyyyMmDd(): string {
   const now = new Date();
@@ -148,12 +205,39 @@ export default function VolleyballTeamManager() {
   const [playerSearch, setPlayerSearch] = useState('');
   const [playerPaymentFilter, setPlayerPaymentFilter] = useState('all');
   const [playerPaymentSort, setPlayerPaymentSort] = useState('none');
+  const [dashboardListModal, setDashboardListModal] = useState<null | 'recentPayments' | 'unpaid'>(null);
+  const [dashboardListSearch, setDashboardListSearch] = useState('');
+  const [playerRowSpotlightId, setPlayerRowSpotlightId] = useState<string | null>(null);
+  const [matchCalendarMonth, setMatchCalendarMonth] = useState(() => new Date());
+  const [matchCalendarSelected, setMatchCalendarSelected] = useState<Date | undefined>(undefined);
+  const [dashboardCalendarTeamFilter, setDashboardCalendarTeamFilter] = useState<string[]>(() => [...TEAMS]);
+
+  const [teamsFormationTeam, setTeamsFormationTeam] = useState<string | null>(null);
+  const [teamsFormationSlots, setTeamsFormationSlots] = useState<FormationSlot[]>([]);
+  const [teamsFormationLoading, setTeamsFormationLoading] = useState(false);
+  const [teamsFormationSaving, setTeamsFormationSaving] = useState(false);
+
+  const [teamsMatchesTeam, setTeamsMatchesTeam] = useState<string | null>(null);
+  const [teamsMatchesList, setTeamsMatchesList] = useState<TeamMatchRow[]>([]);
+  const [teamsMatchesLoading, setTeamsMatchesLoading] = useState(false);
+  const [newMatchOpponent, setNewMatchOpponent] = useState('');
+  const [newMatchDate, setNewMatchDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [newMatchVenue, setNewMatchVenue] = useState('');
+  const [newMatchIsHome, setNewMatchIsHome] = useState(true);
+  const [newMatchNotes, setNewMatchNotes] = useState('');
+  const [matchSubmitting, setMatchSubmitting] = useState(false);
+  const [addMatchModalOpen, setAddMatchModalOpen] = useState(false);
+  const [addMatchOurTeam, setAddMatchOurTeam] = useState(TEAMS[0]);
+  const [matchScoreDrafts, setMatchScoreDrafts] = useState<
+    Record<string, { sets: { our: string; their: string }[] }>
+  >({});
+  const [matchResultSavingId, setMatchResultSavingId] = useState<string | null>(null);
+  const [resultGraphicMatchId, setResultGraphicMatchId] = useState<string | null>(null);
 
   // Photo state
   const [playerPhoto, setPlayerPhoto] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const prevTabRef = useRef<string | null>(null);
 
   const [addPaymentPlayer, setAddPaymentPlayer] = useState<Player | null>(null);
   const [addPaymentAmount, setAddPaymentAmount] = useState('');
@@ -254,7 +338,10 @@ export default function VolleyballTeamManager() {
       const res = await fetch('/api/stats');
       const data = await res.json();
       if (data.totalPlayers !== undefined) {
-        setStats(data);
+        setStats({
+          ...data,
+          teamMatches: Array.isArray(data.teamMatches) ? data.teamMatches : [],
+        });
       }
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -290,14 +377,6 @@ export default function VolleyballTeamManager() {
       initFetch();
     }
   }, [authenticated]);
-
-  useEffect(() => {
-    if (!authenticated) return;
-    if (prevTabRef.current !== null && prevTabRef.current !== activeTab) {
-      refreshAllData();
-    }
-    prevTabRef.current = activeTab;
-  }, [activeTab, authenticated]);
 
   // Handle photo upload to Cloudinary
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -636,7 +715,317 @@ export default function VolleyballTeamManager() {
     return 0;
   });
 
-  // Get player avatar
+  const sortedPlayerIdsKey = sortedPlayers.map((p) => p.id).join(',');
+
+  const goToPlayersRowFromUnpaid = (player: Player) => {
+    const { amountLeft } = getPlayerPaymentSummary(player);
+    const wouldHide =
+      (playerPaymentFilter === 'paid' && amountLeft !== 0) ||
+      (playerPaymentFilter === 'credit' && amountLeft >= 0) ||
+      (playerPaymentFilter === 'withBalance' && amountLeft <= 0);
+    if (wouldHide) setPlayerPaymentFilter('all');
+    setPlayerSearch('');
+    setDashboardListModal(null);
+    setDashboardListSearch('');
+    setPlayerRowSpotlightId(player.id);
+    setActiveTab('players');
+  };
+
+  useEffect(() => {
+    if (!playerRowSpotlightId) return;
+    const t = window.setTimeout(() => {
+      setPlayerRowSpotlightId(null);
+      if (typeof window !== 'undefined' && window.location.hash.startsWith('#player-row-')) {
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+      }
+    }, 4000);
+    return () => window.clearTimeout(t);
+  }, [playerRowSpotlightId]);
+
+  useEffect(() => {
+    if (activeTab !== 'players' || !playerRowSpotlightId) return;
+    if (!sortedPlayers.some((p) => p.id === playerRowSpotlightId)) return;
+    const id = playerRowSpotlightId;
+    const t = window.setTimeout(() => {
+      const nodes = document.querySelectorAll<HTMLElement>(`[data-player-row="${id}"]`);
+      let el: HTMLElement | null = null;
+      for (let i = 0; i < nodes.length; i++) {
+        if (nodes[i].offsetParent !== null) {
+          el = nodes[i];
+          break;
+        }
+      }
+      if (!el) el = nodes[0] ?? null;
+      if (!el) return;
+      const reduceMotion =
+        typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+      window.history.replaceState(null, '', `#player-row-${id}`);
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [activeTab, playerRowSpotlightId, sortedPlayerIdsKey, playerSearch, playerPaymentFilter]);
+
+  const openDashboardListModal = (kind: 'recentPayments' | 'unpaid') => {
+    setDashboardListSearch('');
+    setDashboardListModal(kind);
+  };
+
+  const teamRows = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of players) {
+      if (!p.active) continue;
+      const t = (p.team || '').trim();
+      if (!t) continue;
+      m.set(t, (m.get(t) || 0) + 1);
+    }
+    return Array.from(m.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [players]);
+
+  const resetNewMatchForm = () => {
+    setNewMatchOpponent('');
+    setNewMatchDate(new Date().toISOString().split('T')[0]);
+    setNewMatchVenue('');
+    setNewMatchIsHome(true);
+    setNewMatchNotes('');
+    setAddMatchOurTeam(TEAMS[0]);
+  };
+
+  const openTeamsFormation = async (teamName: string) => {
+    setTeamsFormationTeam(teamName);
+    setTeamsFormationLoading(true);
+    try {
+      const res = await fetch(`/api/teams/${encodeURIComponent(teamName)}/formation`);
+      const data = (await res.json()) as { slots?: unknown; error?: string };
+      if (!res.ok) throw new Error(data.error || 'fetch');
+      const saved = parseFormationSlots(data.slots);
+      const roster = players.filter((p) => p.active && (p.team || '').trim() === teamName);
+      const byId = new Map(saved.map((s) => [s.playerId, s]));
+      const merged: FormationSlot[] = roster.map((p) => {
+        const s = byId.get(p.id);
+        return s ?? { playerId: p.id, position: '', inSquad: true };
+      });
+      setTeamsFormationSlots(merged);
+    } catch {
+      toast.error(teamsL.toastFormationError);
+      setTeamsFormationTeam(null);
+    } finally {
+      setTeamsFormationLoading(false);
+    }
+  };
+
+  const saveTeamsFormation = async () => {
+    if (!teamsFormationTeam) return;
+    setTeamsFormationSaving(true);
+    try {
+      const res = await fetch(`/api/teams/${encodeURIComponent(teamsFormationTeam)}/formation`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slots: teamsFormationSlots }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(teamsL.toastFormationSaved);
+      setTeamsFormationTeam(null);
+    } catch {
+      toast.error(teamsL.toastFormationError);
+    } finally {
+      setTeamsFormationSaving(false);
+    }
+  };
+
+  const reloadTeamsMatches = async () => {
+    if (!teamsMatchesTeam) return;
+    const res = await fetch(`/api/teams/${encodeURIComponent(teamsMatchesTeam)}/matches`);
+    const data = await res.json();
+    setTeamsMatchesList(Array.isArray(data) ? data : []);
+  };
+
+  const openTeamsMatches = async (teamName: string) => {
+    setTeamsMatchesTeam(teamName);
+    setTeamsMatchesLoading(true);
+    try {
+      const res = await fetch(`/api/teams/${encodeURIComponent(teamName)}/matches`);
+      const data = await res.json();
+      setTeamsMatchesList(Array.isArray(data) ? data : []);
+    } catch {
+      toast.error(teamsL.toastMatchError);
+      setTeamsMatchesTeam(null);
+    } finally {
+      setTeamsMatchesLoading(false);
+    }
+  };
+
+  const submitAddMatchModal = async () => {
+    if (!addMatchOurTeam || !newMatchOpponent.trim()) return;
+    setMatchSubmitting(true);
+    try {
+      const res = await fetch(`/api/teams/${encodeURIComponent(addMatchOurTeam)}/matches`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          opponent: newMatchOpponent.trim(),
+          matchDate: new Date(newMatchDate).toISOString(),
+          venue: newMatchVenue.trim() || null,
+          isHome: newMatchIsHome,
+          volleyballSets: null,
+          notes: newMatchNotes.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(teamsL.toastMatchAdded);
+      resetNewMatchForm();
+      setAddMatchModalOpen(false);
+      void fetchStats();
+      if (teamsMatchesTeam === addMatchOurTeam) void reloadTeamsMatches();
+    } catch {
+      toast.error(teamsL.toastMatchError);
+    } finally {
+      setMatchSubmitting(false);
+    }
+  };
+
+  const saveMatchResult = async (matchId: string) => {
+    if (!teamsMatchesTeam) return;
+    const draft = matchScoreDrafts[matchId];
+    if (!draft) return;
+    const parsed = parseSetDraftRows(draft.sets);
+    if (!parsed.ok) {
+      if (parsed.reason === 'tie') {
+        toast.error(teamsL.toastSetCannotTie);
+      } else {
+        toast.error(teamsL.toastSetsInvalid);
+      }
+      return;
+    }
+    setMatchResultSavingId(matchId);
+    try {
+      const res = await fetch(
+        `/api/teams/${encodeURIComponent(teamsMatchesTeam)}/matches/${matchId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ volleyballSets: parsed.sets }),
+        },
+      );
+      if (!res.ok) throw new Error();
+      toast.success(teamsL.toastResultSaved);
+      await reloadTeamsMatches();
+      void fetchStats();
+    } catch {
+      toast.error(teamsL.toastResultError);
+    } finally {
+      setMatchResultSavingId(null);
+    }
+  };
+
+  const deleteTeamMatch = async (matchId: string) => {
+    if (!teamsMatchesTeam) return;
+    try {
+      const res = await fetch(
+        `/api/teams/${encodeURIComponent(teamsMatchesTeam)}/matches/${matchId}`,
+        { method: 'DELETE' }
+      );
+      if (!res.ok) throw new Error();
+      toast.success(teamsL.toastMatchDeleted);
+      await reloadTeamsMatches();
+      void fetchStats();
+    } catch {
+      toast.error(teamsL.toastMatchDeleteError);
+    }
+  };
+
+  useEffect(() => {
+    if (!teamsMatchesTeam) {
+      setMatchScoreDrafts({});
+      return;
+    }
+    const next: Record<string, { sets: { our: string; their: string }[] }> = {};
+    for (const m of teamsMatchesList) {
+      const parsed = parseVolleyballSets(m.volleyballSets);
+      if (parsed.length > 0) {
+        next[m.id] = {
+          sets: parsed.map((s) => ({ our: String(s.our), their: String(s.their) })),
+        };
+      } else {
+        next[m.id] = { sets: [{ our: '', their: '' }] };
+      }
+    }
+    setMatchScoreDrafts(next);
+  }, [teamsMatchesTeam, teamsMatchesList]);
+
+  const resultGraphicMatch = useMemo(
+    () =>
+      resultGraphicMatchId === null
+        ? null
+        : teamsMatchesList.find((m) => m.id === resultGraphicMatchId) ?? null,
+    [resultGraphicMatchId, teamsMatchesList],
+  );
+
+  useEffect(() => {
+    if (resultGraphicMatchId === null) return;
+    if (!teamsMatchesList.some((m) => m.id === resultGraphicMatchId)) {
+      setResultGraphicMatchId(null);
+    }
+  }, [teamsMatchesList, resultGraphicMatchId]);
+
+  const dashboardFilteredPayments = useMemo(() => {
+    const list = stats?.recentPayments ?? [];
+    if (dashboardListModal !== 'recentPayments') return list;
+    const q = dashboardListSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((p) => {
+      const name = (p.player?.name || '').toLowerCase();
+      const amt = String(p.amount ?? '');
+      const rawDate = (p.paidDate || '').toLowerCase();
+      const disp = formatDateDisplay(p.paidDate).toLowerCase();
+      return name.includes(q) || amt.includes(q) || rawDate.includes(q) || disp.includes(q);
+    });
+  }, [stats?.recentPayments, dashboardListSearch, dashboardListModal]);
+
+  const dashboardFilteredUnpaid = useMemo(() => {
+    const list = stats?.playersWithUnpaidBills ?? [];
+    if (dashboardListModal !== 'unpaid') return list;
+    const q = dashboardListSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((player) => {
+      const name = player.name.toLowerCase();
+      const team = (player.team || '').toLowerCase();
+      const { amountLeft } = getPlayerPaymentSummary(player);
+      const left = Math.max(0, amountLeft);
+      const amtStr = formatCurrency(left).toLowerCase();
+      const qCompact = q.replace(/\s/g, '');
+      return (
+        name.includes(q) ||
+        team.includes(q) ||
+        String(left).includes(q) ||
+        amtStr.replace(/\s/g, '').includes(qCompact)
+      );
+    });
+  }, [stats?.playersWithUnpaidBills, dashboardListSearch, dashboardListModal]);
+
+  const dashboardCalendarFilteredMatches = useMemo(() => {
+    const all = stats?.teamMatches ?? [];
+    if (dashboardCalendarTeamFilter.length === 0) return [];
+    const allowed = new Set(dashboardCalendarTeamFilter);
+    return all.filter((m) => allowed.has(m.teamName));
+  }, [stats?.teamMatches, dashboardCalendarTeamFilter]);
+
+  const dashboardCalendarMatchDays = useMemo(() => {
+    const keys = new Set<string>();
+    for (const m of dashboardCalendarFilteredMatches) {
+      const k = localDayKeyFromMatchIso(m.matchDate);
+      if (k) keys.add(k);
+    }
+    return [...keys].map((k) => parse(k, 'yyyy-MM-dd', new Date()));
+  }, [dashboardCalendarFilteredMatches]);
+
+  const dashboardCalendarDayMatches = useMemo(() => {
+    if (!matchCalendarSelected) return [];
+    const key = format(matchCalendarSelected, 'yyyy-MM-dd');
+    return dashboardCalendarFilteredMatches
+      .filter((m) => localDayKeyFromMatchIso(m.matchDate) === key)
+      .sort((a, b) => new Date(a.matchDate).getTime() - new Date(b.matchDate).getTime());
+  }, [dashboardCalendarFilteredMatches, matchCalendarSelected]);
+
   const getPlayerAvatar = (player: Player, size: 'sm' | 'md' | 'lg' = 'sm') => {
     const sizeClasses = {
       sm: 'w-8 h-8 text-sm',
@@ -770,7 +1159,7 @@ export default function VolleyballTeamManager() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-svh min-h-0 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       {operationInProgress && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-background/80 backdrop-blur-sm pointer-events-auto" aria-hidden="true">
           <div className="flex flex-col items-center gap-4">
@@ -779,7 +1168,7 @@ export default function VolleyballTeamManager() {
           </div>
         </div>
       )}
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+      <header className="shrink-0 bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-3">
@@ -793,6 +1182,20 @@ export default function VolleyballTeamManager() {
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="hidden sm:flex"
+                onClick={() => {
+                  resetNewMatchForm();
+                  setAddMatchOurTeam(teamRows[0]?.[0] ?? TEAMS[0]);
+                  setAddMatchModalOpen(true);
+                }}
+              >
+                <Calendar className="w-4 h-4 mr-2" />
+                {teamsL.addMatch}
+              </Button>
               <Button onClick={() => { resetPlayerForm(); setEditingPlayer(null); setPlayerDialogOpen(true); }} size="sm" className="hidden sm:flex">
                 <UserPlus className="w-4 h-4 mr-2" />
                 Shto Lojtar
@@ -807,9 +1210,9 @@ export default function VolleyballTeamManager() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2 mb-4 sm:mb-6 h-auto">
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1 w-full overflow-hidden">
+          <TabsList className="grid w-full grid-cols-3 mb-4 sm:mb-6 h-auto gap-1">
             <TabsTrigger value="dashboard" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
               <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="text-xs sm:text-sm">Përgjithësi</span>
@@ -818,12 +1221,16 @@ export default function VolleyballTeamManager() {
               <Users className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="text-xs sm:text-sm">Lojtarët</span>
             </TabsTrigger>
+            <TabsTrigger value="teams" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
+              <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="text-xs sm:text-sm">{teamsL.tabShort}</span>
+            </TabsTrigger>
           </TabsList>
 
           {/* Dashboard Tab */}
-          <TabsContent value="dashboard" className="space-y-6">
+          <TabsContent value="dashboard" className="flex flex-col flex-1 min-h-0 gap-6 overflow-y-auto outline-none">
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            <div className="grid shrink-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">Totali i Lojtarëve</CardTitle>
@@ -911,86 +1318,246 @@ export default function VolleyballTeamManager() {
               </Card>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Recent Payments */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Pagesat e Fundit</CardTitle>
-                  <CardDescription>Aktivitetet e fundit të pagesave</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {!stats?.recentPayments || stats.recentPayments.length === 0 ? (
-                    <p className="text-center text-gray-500 py-4">Nuk ka pagesa të fundit</p>
+            <div className="flex flex-1 flex-col min-h-0">
+              <div className="grid auto-rows-fr grid-cols-1 items-stretch gap-4 sm:gap-5 lg:grid-cols-3 lg:gap-6 lg:[grid-template-columns:repeat(3,minmax(0,1fr))]">
+                <Card className="relative flex flex-col gap-4 overflow-hidden border-primary/25 bg-gradient-to-br from-card via-card to-primary/[0.06] py-4 dark:to-primary/10 sm:gap-5 sm:py-5 shadow-md shadow-primary/5">
+                  <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
+                  <div className="pointer-events-none absolute -bottom-6 -left-6 h-20 w-20 rounded-full bg-orange-400/10 blur-2xl" />
+                  <CardHeader className="relative shrink-0 px-4 sm:px-5">
+                    <CardTitle className="flex items-center gap-3 text-base sm:text-lg">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25 shadow-inner">
+                        <Calendar className="h-4 w-4" aria-hidden />
+                      </span>
+                      {dl.calendarTitle}
+                    </CardTitle>
+                    <CardDescription className="text-xs leading-snug sm:text-sm">{dl.calendarDescription}</CardDescription>
+                  </CardHeader>
+                <CardContent className="relative flex flex-col gap-3 px-4 sm:px-5">
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">{dl.calendarTeamFilterLabel}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {TEAMS.map((team) => {
+                        const on = dashboardCalendarTeamFilter.includes(team);
+                        return (
+                          <button
+                            key={team}
+                            type="button"
+                            onClick={() => {
+                              setDashboardCalendarTeamFilter((prev) => {
+                                if (prev.includes(team)) return prev.filter((t) => t !== team);
+                                return [...prev, team].sort((a, b) => TEAMS.indexOf(a) - TEAMS.indexOf(b));
+                              });
+                            }}
+                            className={cn(
+                              'rounded-full px-2 py-0.5 text-[11px] font-semibold transition-all sm:text-xs',
+                              on
+                                ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
+                                : 'bg-muted/80 text-muted-foreground hover:bg-muted',
+                            )}
+                          >
+                            {team}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => setDashboardCalendarTeamFilter([...TEAMS])}
+                      >
+                        {dl.calendarTeamFilterAll}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => setDashboardCalendarTeamFilter([])}
+                      >
+                        {dl.calendarTeamFilterNone}
+                      </Button>
+                    </div>
+                  </div>
+                  {dashboardCalendarTeamFilter.length === 0 ? (
+                    <p className="text-center text-sm text-muted-foreground py-6">{dl.calendarNoMatchesFiltered}</p>
                   ) : (
-                    <div className="space-y-3 max-h-64 overflow-y-auto">
-                      {stats.recentPayments.map((payment) => (
-                        <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
-                              <CheckCircle className="w-5 h-5 text-green-500" />
+                    <>
+                      <div className="flex justify-center rounded-2xl border border-primary/15 bg-background/70 p-0.5 shadow-inner backdrop-blur-sm">
+                        <DatePicker
+                          mode="single"
+                          locale={dateFnsSq}
+                          month={matchCalendarMonth}
+                          onMonthChange={setMatchCalendarMonth}
+                          selected={matchCalendarSelected}
+                          onSelect={setMatchCalendarSelected}
+                          modifiers={{ hasMatch: dashboardCalendarMatchDays }}
+                          modifiersClassNames={{
+                            hasMatch: cn(
+                              'relative font-semibold text-primary',
+                              "after:absolute after:bottom-1 after:left-1/2 after:h-1 after:w-1 after:-translate-x-1/2 after:rounded-full after:bg-primary after:content-['']",
+                            ),
+                          }}
+                          className="mx-auto w-full max-w-[min(100%,20rem)] [--cell-size:1.95rem] rounded-xl bg-transparent p-1 sm:[--cell-size:2.1rem] xl:[--cell-size:2.25rem]"
+                        />
+                      </div>
+                      <div className="min-h-[3.5rem] max-h-36 overflow-y-auto rounded-xl border border-primary/10 bg-muted/25 p-2 touch-pan-y">
+                        {!matchCalendarSelected ? (
+                          <p className="text-center text-sm text-muted-foreground py-2">{dl.calendarPickDay}</p>
+                        ) : dashboardCalendarDayMatches.length === 0 ? (
+                          <p className="text-center text-sm text-muted-foreground py-2">{dl.calendarNoMatchesThisDay}</p>
+                        ) : (
+                          <ul className="space-y-2">
+                            {dashboardCalendarDayMatches.map((m) => (
+                              <li
+                                key={m.id}
+                                className="flex flex-col gap-1 rounded-lg border border-border/60 bg-background/80 px-3 py-2 shadow-sm"
+                              >
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant="secondary" className="font-mono text-xs">
+                                    {m.teamName}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    {m.isHome ? dl.calendarHome : dl.calendarAway}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Volleyball className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                                  <span className="font-medium text-foreground truncate">{m.opponent}</span>
+                                </div>
+                                {m.venue ? (
+                                  <p className="text-xs text-muted-foreground truncate">{m.venue}</p>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => openDashboardListModal('recentPayments')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openDashboardListModal('recentPayments');
+                  }
+                }}
+                className="h-0 min-h-full overflow-hidden cursor-pointer border-border transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+              >
+                <CardHeader className="shrink-0">
+                  <CardTitle>{dl.recentPaymentsTitle}</CardTitle>
+                  <CardDescription>{dl.recentPaymentsDescription}</CardDescription>
+                </CardHeader>
+                <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pt-0">
+                  {!stats?.recentPayments || stats.recentPayments.length === 0 ? (
+                    <p className="flex flex-1 items-center justify-center text-center text-gray-500 py-6 min-h-[12rem]">{dl.recentPaymentsEmpty}</p>
+                  ) : (
+                    <>
+                      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain touch-pan-y">
+                        {(stats?.recentPayments ?? []).map((payment) => (
+                          <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 shrink-0 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+                                <CheckCircle className="w-5 h-5 text-green-500" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-medium text-gray-900 dark:text-white truncate">{payment.player?.name || dl.unknownPlayer}</div>
+                                <div className="text-sm text-gray-500">
+                                  {formatDateDisplay(payment.paidDate)}
+                                </div>
+                              </div>
                             </div>
-                            <div>
-                              <div className="font-medium text-gray-900 dark:text-white">{payment.player?.name || 'I panjohur'}</div>
-                              <div className="text-sm text-gray-500">
+                            <div className="text-right shrink-0 pl-2">
+                              <div className="font-semibold text-green-600">{formatCurrency(payment.amount)}</div>
+                              <div className="text-xs text-gray-500">
                                 {formatDateDisplay(payment.paidDate)}
                               </div>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <div className="font-semibold text-green-600">{formatCurrency(payment.amount)}</div>
-                            <div className="text-xs text-gray-500">
-                              {formatDateDisplay(payment.paidDate)}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                      {stats.recentPayments.length > DASHBOARD_CARD_MODAL_HINT_MIN_ITEMS ? (
+                        <p className="text-xs text-muted-foreground shrink-0 pt-3 mt-auto border-t border-border/60">
+                          {dl.cardPreviewHint(stats.recentPayments.length)}
+                        </p>
+                      ) : null}
+                    </>
                   )}
                 </CardContent>
               </Card>
 
-              {/* Players Who Haven't Paid */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Pagesat e Papaguara</CardTitle>
-                  <CardDescription>Lojtarët me fatura të papaguara (në pritje ose vonuar)</CardDescription>
+              <Card
+                role="button"
+                tabIndex={0}
+                onClick={() => openDashboardListModal('unpaid')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openDashboardListModal('unpaid');
+                  }
+                }}
+                className="h-0 min-h-full overflow-hidden cursor-pointer border-border transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+              >
+                <CardHeader className="shrink-0">
+                  <CardTitle>{dl.unpaidTitle}</CardTitle>
+                  <CardDescription>{dl.unpaidDescription}</CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pt-0">
                   {!stats?.playersWithUnpaidBills || stats.playersWithUnpaidBills.length === 0 ? (
-                    <div className="text-center py-8">
+                    <div className="flex flex-1 flex-col items-center justify-center text-center py-8 min-h-[12rem]">
                       <CheckCircle className="w-12 h-12 mx-auto text-green-500 mb-2" />
-                      <p className="text-gray-500">Nuk ka lojtarë me fatura të papaguara</p>
+                      <p className="text-gray-500">{dl.unpaidEmpty}</p>
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {stats.playersWithUnpaidBills.map((player) => (
-                        <div key={player.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                          <div className="flex items-center gap-3">
-                            {getPlayerAvatar(player, 'md')}
-                            <div>
-                              <div className="font-medium text-gray-900 dark:text-white">{player.name}</div>
-                              <div className="text-sm text-gray-500">{player.team || 'Pa ekip'}</div>
+                    <>
+                      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-y-contain touch-pan-y">
+                        {(stats?.playersWithUnpaidBills ?? []).map((player) => (
+                          <div key={player.id} className="flex items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                            <div className="flex items-center gap-3 min-w-0">
+                              {getPlayerAvatar(player, 'md')}
+                              <div className="min-w-0">
+                                <div className="font-medium text-gray-900 dark:text-white truncate">{player.name}</div>
+                                <div className="text-sm text-gray-500 truncate">{player.team || dl.noTeam}</div>
+                              </div>
                             </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="shrink-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                goToPlayersRowFromUnpaid(player);
+                              }}
+                            >
+                              <Users className="w-4 h-4 mr-1" />
+                              {dl.viewPlayers}
+                            </Button>
                           </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setActiveTab('players')}
-                          >
-                            <Users className="w-4 h-4 mr-1" />
-                            Shiko Lojtarët
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                      {stats.playersWithUnpaidBills.length > DASHBOARD_CARD_MODAL_HINT_MIN_ITEMS ? (
+                        <p className="text-xs text-muted-foreground shrink-0 pt-3 mt-auto border-t border-border/60">
+                          {dl.cardPreviewHint(stats.playersWithUnpaidBills.length)}
+                        </p>
+                      ) : null}
+                    </>
                   )}
                 </CardContent>
               </Card>
+              </div>
             </div>
           </TabsContent>
 
           {/* Players Tab */}
-          <TabsContent value="players" className="space-y-6">
+          <TabsContent value="players" className="flex flex-col flex-1 min-h-0 gap-6 overflow-y-auto outline-none">
             <Card>
               <CardHeader>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1051,7 +1618,14 @@ export default function VolleyballTeamManager() {
                     {/* Mobile Card Layout */}
                     <div className="sm:hidden space-y-3">
                       {sortedPlayers.map((player) => (
-                        <div key={player.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm">
+                        <div
+                          key={player.id}
+                          data-player-row={player.id}
+                          className={cn(
+                            'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm scroll-mt-24',
+                            playerRowSpotlightId === player.id && 'player-row-spotlight',
+                          )}
+                        >
                           <div className="flex items-start gap-3">
                             {getPlayerAvatar(player, 'lg')}
                             <div className="flex-1 min-w-0">
@@ -1161,7 +1735,14 @@ export default function VolleyballTeamManager() {
                       </TableHeader>
                       <TableBody>
                         {sortedPlayers.map((player) => (
-                          <TableRow key={player.id}>
+                          <TableRow
+                            key={player.id}
+                            data-player-row={player.id}
+                            className={cn(
+                              'scroll-mt-24',
+                              playerRowSpotlightId === player.id && 'player-row-spotlight',
+                            )}
+                          >
                             <TableCell>
                               {getPlayerAvatar(player, 'md')}
                             </TableCell>
@@ -1283,8 +1864,595 @@ export default function VolleyballTeamManager() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="teams" className="flex flex-col flex-1 min-h-0 gap-6 overflow-y-auto outline-none">
+            <Card>
+              <CardHeader>
+                <CardTitle>{teamsL.pageTitle}</CardTitle>
+                <CardDescription>{teamsL.pageDescription}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {teamRows.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-10">{teamsL.emptyNoTeams}</p>
+                ) : (
+                  <>
+                    <div className="hidden sm:block overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>{teamsL.colTeam}</TableHead>
+                            <TableHead>{teamsL.colPlayers}</TableHead>
+                            <TableHead className="text-right">{teamsL.colActions}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {teamRows.map(([teamName, count]) => (
+                            <TableRow key={teamName}>
+                              <TableCell className="font-medium">{teamName}</TableCell>
+                              <TableCell>{count}</TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  <Button type="button" variant="outline" size="sm" onClick={() => void openTeamsMatches(teamName)}>
+                                    {teamsL.matches}
+                                  </Button>
+                                  <Button type="button" size="sm" onClick={() => void openTeamsFormation(teamName)}>
+                                    {teamsL.editFormation}
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="sm:hidden space-y-3">
+                      {teamRows.map(([teamName, count]) => (
+                        <div
+                          key={teamName}
+                          className="rounded-lg border border-border bg-card p-4 shadow-sm"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-lg font-semibold text-foreground">{teamName}</span>
+                            <Badge variant="secondary">
+                              {count} {teamsL.colPlayers}
+                            </Badge>
+                          </div>
+                          <div className="mt-3 flex flex-col gap-2">
+                            <Button type="button" variant="outline" className="w-full" onClick={() => void openTeamsMatches(teamName)}>
+                              {teamsL.matches}
+                            </Button>
+                            <Button type="button" className="w-full" onClick={() => void openTeamsFormation(teamName)}>
+                              {teamsL.editFormation}
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </main>
+
+      <Dialog
+        open={teamsFormationTeam !== null}
+        onOpenChange={(open) => {
+          if (!open) setTeamsFormationTeam(null);
+        }}
+      >
+        <DialogContent className="flex h-[min(92dvh,900px)] w-[calc(100vw-1rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
+          <DialogHeader className="shrink-0 space-y-1 border-b px-6 py-4">
+            <DialogTitle>{teamsFormationTeam ? teamsL.formationTitle(teamsFormationTeam) : ''}</DialogTitle>
+            <DialogDescription>{teamsL.formationDescription}</DialogDescription>
+          </DialogHeader>
+          {teamsFormationLoading ? (
+            <div className="flex min-h-[12rem] flex-1 items-center justify-center">
+              <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+            </div>
+          ) : teamsFormationSlots.length === 0 ? (
+            <div className="flex min-h-[12rem] flex-1 items-center justify-center px-6">
+              <p className="text-center text-sm text-muted-foreground">{teamsL.emptyFormationRoster}</p>
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-6 py-4">
+              {teamsFormationSlots.map((slot) => {
+                const pl = players.find((p) => p.id === slot.playerId);
+                return (
+                  <div
+                    key={slot.playerId}
+                    className="flex flex-col gap-4 rounded-xl border border-border bg-muted/20 p-4 sm:flex-row sm:items-center sm:gap-6"
+                  >
+                    <div className="flex min-w-0 flex-1 items-center gap-4 sm:max-w-[min(100%,20rem)]">
+                      {pl ? (
+                        getPlayerAvatar(pl, 'lg')
+                      ) : (
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-muted text-lg font-semibold text-muted-foreground">
+                          ?
+                        </div>
+                      )}
+                      <span className="truncate text-base font-semibold text-foreground">{pl?.name ?? '—'}</span>
+                    </div>
+                    <div className="grid min-w-0 flex-1 gap-4 sm:grid-cols-2 sm:items-end">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">{teamsL.colPosition}</Label>
+                        <Input
+                          value={slot.position}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setTeamsFormationSlots((prev) =>
+                              prev.map((s) => (s.playerId === slot.playerId ? { ...s, position: v } : s)),
+                            );
+                          }}
+                          placeholder={teamsL.positionPlaceholder}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background px-4 py-3 sm:justify-end sm:py-2.5">
+                        <Label htmlFor={`squad-${slot.playerId}`} className="text-sm">
+                          {teamsL.colInSquad}
+                        </Label>
+                        <Switch
+                          id={`squad-${slot.playerId}`}
+                          checked={slot.inSquad}
+                          onCheckedChange={(checked) => {
+                            setTeamsFormationSlots((prev) =>
+                              prev.map((s) => (s.playerId === slot.playerId ? { ...s, inSquad: checked } : s)),
+                            );
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <DialogFooter className="shrink-0 gap-2 border-t px-6 py-4 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setTeamsFormationTeam(null)}>
+              {teamsL.close}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void saveTeamsFormation()}
+              disabled={teamsFormationSaving || teamsFormationLoading || teamsFormationSlots.length === 0}
+            >
+              {teamsFormationSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {teamsL.saving}
+                </>
+              ) : (
+                teamsL.saveFormation
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={teamsMatchesTeam !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTeamsMatchesTeam(null);
+            setMatchScoreDrafts({});
+            setResultGraphicMatchId(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[min(92dvh,820px)] w-[calc(100vw-1rem)] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{teamsMatchesTeam ? teamsL.matchesTitle(teamsMatchesTeam) : ''}</DialogTitle>
+            <DialogDescription>{teamsL.matchesDescriptionListOnly}</DialogDescription>
+          </DialogHeader>
+          {teamsMatchesLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="max-h-[min(72dvh,640px)] space-y-0 overflow-y-auto rounded-lg border">
+              {teamsMatchesList.length === 0 ? (
+                <p className="p-6 text-center text-sm text-muted-foreground">{teamsL.emptyMatches}</p>
+              ) : (
+                teamsMatchesList.map((m) => {
+                  const finished = isTeamMatchFinished(m.matchDate);
+                  const draft = matchScoreDrafts[m.id] ?? { sets: [{ our: '', their: '' }] };
+                  const savedParsed = parseVolleyballSets(m.volleyballSets);
+                  const hasLegacySetsOnly =
+                    savedParsed.length === 0 && m.ourScore != null && m.theirScore != null;
+                  return (
+                    <div
+                      key={m.id}
+                      className="flex flex-col gap-3 border-b border-border p-3 last:border-b-0 sm:flex-row sm:items-start sm:justify-between"
+                    >
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="font-medium text-foreground">{formatDateDisplay(m.matchDate)}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {m.opponent} · {m.isHome ? teamsL.home : teamsL.away}
+                        </div>
+                        {m.venue ? <div className="text-xs text-muted-foreground">{m.venue}</div> : null}
+                        {m.notes ? <div className="text-xs text-foreground/80 line-clamp-2">{m.notes}</div> : null}
+                      </div>
+                      <div className="flex shrink-0 flex-col gap-3 sm:items-end">
+                        {finished ? (
+                          <div className="flex w-full flex-col gap-3 sm:w-auto sm:items-end">
+                            <div className="text-xs font-medium text-muted-foreground">{teamsL.setsHeading}</div>
+                            <div className="flex flex-col gap-2">
+                              {draft.sets.map((row, setIdx) => (
+                                <div key={setIdx} className="flex flex-wrap items-end gap-2">
+                                  <span className="w-full text-xs text-muted-foreground sm:w-auto sm:min-w-[4.5rem]">
+                                    {teamsL.setNumber(setIdx + 1)}
+                                  </span>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">{teamsL.ourScoreShort}</Label>
+                                    <Input
+                                      className="h-9 w-14 text-center tabular-nums"
+                                      inputMode="numeric"
+                                      value={row.our}
+                                      onChange={(e) =>
+                                        setMatchScoreDrafts((prev) => {
+                                          const cur = prev[m.id] ?? { sets: [{ our: '', their: '' }] };
+                                          const sets = cur.sets.map((s, i) =>
+                                            i === setIdx ? { ...s, our: e.target.value } : s,
+                                          );
+                                          return { ...prev, [m.id]: { sets } };
+                                        })
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">{teamsL.theirScoreShort}</Label>
+                                    <Input
+                                      className="h-9 w-14 text-center tabular-nums"
+                                      inputMode="numeric"
+                                      value={row.their}
+                                      onChange={(e) =>
+                                        setMatchScoreDrafts((prev) => {
+                                          const cur = prev[m.id] ?? { sets: [{ our: '', their: '' }] };
+                                          const sets = cur.sets.map((s, i) =>
+                                            i === setIdx ? { ...s, their: e.target.value } : s,
+                                          );
+                                          return { ...prev, [m.id]: { sets } };
+                                        })
+                                      }
+                                    />
+                                  </div>
+                                  {draft.sets.length > 1 ? (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="mb-0.5 h-9 px-2"
+                                      onClick={() =>
+                                        setMatchScoreDrafts((prev) => {
+                                          const cur = prev[m.id];
+                                          if (!cur || cur.sets.length <= 1) return prev;
+                                          return {
+                                            ...prev,
+                                            [m.id]: { sets: cur.sets.filter((_, i) => i !== setIdx) },
+                                          };
+                                        })
+                                      }
+                                    >
+                                      {teamsL.removeSet}
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {draft.sets.length < MAX_VOLLEY_SETS ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    setMatchScoreDrafts((prev) => {
+                                      const cur = prev[m.id] ?? { sets: [{ our: '', their: '' }] };
+                                      if (cur.sets.length >= MAX_VOLLEY_SETS) return prev;
+                                      return {
+                                        ...prev,
+                                        [m.id]: { sets: [...cur.sets, { our: '', their: '' }] },
+                                      };
+                                    })
+                                  }
+                                >
+                                  <Plus className="mr-1 h-4 w-4" />
+                                  {teamsL.addSet}
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={matchResultSavingId === m.id}
+                                onClick={() => void saveMatchResult(m.id)}
+                              >
+                                {matchResultSavingId === m.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  teamsL.saveResult
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : savedParsed.length > 0 ? (
+                          <span className="font-mono text-base tabular-nums sm:text-lg">
+                            {formatVolleyballSetsSummary(savedParsed)}
+                          </span>
+                        ) : hasLegacySetsOnly ? (
+                          <div className="flex flex-col items-end gap-0.5 text-right">
+                            <span className="font-mono text-base tabular-nums sm:text-lg">
+                              {m.ourScore} — {m.theirScore}
+                            </span>
+                            <span className="text-xs text-muted-foreground">{teamsL.legacySetScoreLabel}</span>
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" variant="destructive" size="sm" onClick={() => void deleteTeamMatch(m.id)}>
+                            <Trash2 className="h-4 w-4 sm:mr-1" />
+                            <span className="hidden sm:inline">{teamsL.deleteMatch}</span>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={resultGraphicMatchId !== null}
+        onOpenChange={(open) => {
+          if (!open) setResultGraphicMatchId(null);
+        }}
+      >
+        <DialogContent className="max-h-[min(92dvh,900px)] w-[calc(100vw-1rem)] max-w-4xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {resultGraphicMatch ? teamsL.resultGraphicDialogTitle(resultGraphicMatch.opponent) : ''}
+            </DialogTitle>
+          </DialogHeader>
+          {resultGraphicMatch ? (
+            <MatchResultGraphic
+              data={buildMatchResultDataFromRow(
+                resultGraphicMatch,
+                matchScoreDrafts[resultGraphicMatch.id],
+              )}
+              locale="sq"
+            />
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setResultGraphicMatchId(null)}>
+              {teamsL.close}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={addMatchModalOpen}
+        onOpenChange={(open) => {
+          setAddMatchModalOpen(open);
+          if (!open) resetNewMatchForm();
+        }}
+      >
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{teamsL.addMatchModalTitle}</DialogTitle>
+            <DialogDescription>{teamsL.addMatchModalDescription}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2">
+              <Label>{teamsL.ourTeamLabel}</Label>
+              <Select value={addMatchOurTeam} onValueChange={setAddMatchOurTeam}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TEAMS.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{teamsL.colDate}</Label>
+              <Input type="date" value={newMatchDate} onChange={(e) => setNewMatchDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>{teamsL.colOpponent}</Label>
+              <Input
+                value={newMatchOpponent}
+                onChange={(e) => setNewMatchOpponent(e.target.value)}
+                placeholder={teamsL.opponentPlaceholder}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+              <Label htmlFor="add-match-home" className="text-sm">
+                {newMatchIsHome ? teamsL.home : teamsL.away}
+              </Label>
+              <Switch id="add-match-home" checked={newMatchIsHome} onCheckedChange={setNewMatchIsHome} />
+            </div>
+            <div className="space-y-2">
+              <Label>{teamsL.colVenue}</Label>
+              <Input
+                value={newMatchVenue}
+                onChange={(e) => setNewMatchVenue(e.target.value)}
+                placeholder={teamsL.venuePlaceholder}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{teamsL.notesPlaceholder}</Label>
+              <Textarea value={newMatchNotes} onChange={(e) => setNewMatchNotes(e.target.value)} rows={2} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setAddMatchModalOpen(false)}>
+              {teamsL.close}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void submitAddMatchModal()}
+              disabled={matchSubmitting || !newMatchOpponent.trim()}
+            >
+              {matchSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {teamsL.saving}
+                </>
+              ) : (
+                teamsL.addMatch
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={dashboardListModal !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDashboardListModal(null);
+            setDashboardListSearch('');
+          }
+        }}
+      >
+        <DialogContent
+          className={cn(
+            'flex w-[calc(100vw-1rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl',
+            'max-h-[min(90dvh,820px)] min-h-0',
+            'top-[max(0.75rem,4dvh)] translate-y-0 sm:top-[50%] sm:translate-y-[-50%]',
+            'duration-300',
+          )}
+        >
+          <DialogHeader className="shrink-0 space-y-1 border-b px-4 py-4 text-left sm:px-6">
+            <DialogTitle>
+              {dashboardListModal === 'recentPayments' ? dl.recentPaymentsTitle : dl.unpaidTitle}
+            </DialogTitle>
+            <DialogDescription>
+              {dashboardListModal === 'recentPayments' ? dl.recentPaymentsDescription : dl.unpaidDescription}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="shrink-0 border-b px-4 py-3 sm:px-6">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder={
+                  dashboardListModal === 'recentPayments'
+                    ? dl.listSearchPlaceholderPayments
+                    : dl.listSearchPlaceholderUnpaid
+                }
+                value={dashboardListSearch}
+                onChange={(e) => setDashboardListSearch(e.target.value)}
+                className="pl-10"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div
+            key={dashboardListModal ?? 'closed'}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-3 sm:px-6 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200"
+          >
+            {dashboardListModal === 'recentPayments' && (() => {
+              const total = stats?.recentPayments?.length ?? 0;
+              if (total === 0) {
+                return <p className="py-8 text-center text-muted-foreground">{dl.recentPaymentsEmpty}</p>;
+              }
+              if (dashboardFilteredPayments.length === 0) {
+                return <p className="py-8 text-center text-muted-foreground">{dl.listNoResults}</p>;
+              }
+              return (
+                <ul className="space-y-2">
+                  {dashboardFilteredPayments.map((payment, i) => (
+                    <li
+                      key={payment.id}
+                      style={{ animationDelay: `${Math.min(i * 28, 400)}ms` }}
+                      className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:fill-mode-both flex flex-col gap-1 rounded-lg border border-border/60 bg-muted/40 p-3 duration-200 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                          <CheckCircle className="h-5 w-5 text-green-500" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-foreground truncate">{payment.player?.name || dl.unknownPlayer}</div>
+                          <div className="text-sm text-muted-foreground">{formatDateDisplay(payment.paidDate)}</div>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-left sm:text-right">
+                        <div className="font-semibold text-green-600">{formatCurrency(payment.amount)}</div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              );
+            })()}
+            {dashboardListModal === 'unpaid' && (() => {
+              const total = stats?.playersWithUnpaidBills?.length ?? 0;
+              if (total === 0) {
+                return (
+                  <div className="py-8 text-center">
+                    <CheckCircle className="mx-auto mb-2 h-12 w-12 text-green-500" />
+                    <p className="text-muted-foreground">{dl.unpaidEmpty}</p>
+                  </div>
+                );
+              }
+              if (dashboardFilteredUnpaid.length === 0) {
+                return <p className="py-8 text-center text-muted-foreground">{dl.listNoResults}</p>;
+              }
+              return (
+                <ul className="space-y-2">
+                  {dashboardFilteredUnpaid.map((player, i) => {
+                    const { amountLeft } = getPlayerPaymentSummary(player);
+                    const left = Math.max(0, amountLeft);
+                    return (
+                      <li
+                        key={player.id}
+                        style={{ animationDelay: `${Math.min(i * 28, 400)}ms` }}
+                        className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:fill-mode-both flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/40 p-3 duration-200 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
+                          {getPlayerAvatar(player, 'md')}
+                          <div className="min-w-0">
+                            <div className="font-medium text-foreground truncate">{player.name}</div>
+                            <div className="text-sm text-muted-foreground truncate">{player.team || dl.noTeam}</div>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+                          <div className="font-semibold text-amber-700 dark:text-amber-500 sm:min-w-[7rem] sm:text-right">
+                            {formatCurrency(left)}
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full sm:w-auto"
+                            onClick={() => goToPlayersRowFromUnpaid(player)}
+                          >
+                            <Users className="mr-1 h-4 w-4" />
+                            {dl.viewPlayers}
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              );
+            })()}
+          </div>
+          <div className="shrink-0 border-t px-4 py-2.5 text-xs text-muted-foreground sm:px-6">
+            {dashboardListModal === 'recentPayments' && (
+              <span>{dl.listFooterCounts(dashboardFilteredPayments.length, stats?.recentPayments?.length ?? 0)}</span>
+            )}
+            {dashboardListModal === 'unpaid' && (
+              <span>{dl.listFooterCounts(dashboardFilteredUnpaid.length, stats?.playersWithUnpaidBills?.length ?? 0)}</span>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Player Dialog */}
       <Dialog open={playerDialogOpen} onOpenChange={setPlayerDialogOpen}>

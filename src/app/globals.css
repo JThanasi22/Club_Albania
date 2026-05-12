@@ -121,6 +121,50 @@
   }
 }
 
+@keyframes player-row-spotlight-pulse {
+  0% {
+    box-shadow: 0 0 0 0 oklch(0.72 0.17 41 / 0.55);
+    filter: brightness(1.02);
+  }
+  18% {
+    box-shadow: 0 0 0 10px oklch(0.72 0.17 41 / 0.12);
+    filter: brightness(1.06);
+  }
+  40% {
+    box-shadow: 0 0 0 3px oklch(0.72 0.17 41 / 0.35);
+    filter: brightness(1.03);
+  }
+  70% {
+    box-shadow: 0 0 0 1px oklch(0.72 0.17 41 / 0.22);
+    filter: brightness(1.01);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    filter: brightness(1);
+  }
+}
+
+.player-row-spotlight {
+  position: relative;
+  z-index: 2;
+  border-radius: 0.75rem;
+  outline: 2px solid oklch(0.62 0.2 41);
+  outline-offset: 2px;
+  animation: player-row-spotlight-pulse 4s cubic-bezier(0.45, 0, 0.2, 1) forwards;
+}
+
+.dark .player-row-spotlight {
+  outline-color: oklch(0.78 0.14 41);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-row-spotlight {
+    animation: none;
+    box-shadow: 0 0 0 3px oklch(0.72 0.17 41 / 0.3);
+    outline-width: 3px;
+  }
+}
+
 .toast-with-bg {
   background: hsl(var(--card)) !important;
   color: hsl(var(--card-foreground)) !important;

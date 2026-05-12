@@ -49,6 +49,14 @@ export type DashboardStatsPayload = {
     totalPayment: number;
     paymentHistory: unknown;
   }[];
+  teamMatches: {
+    id: string;
+    teamName: string;
+    matchDate: string;
+    opponent: string;
+    isHome: boolean;
+    venue: string | null;
+  }[];
 };
 
 export async function computeDashboardStats(): Promise<DashboardStatsPayload> {
@@ -56,16 +64,38 @@ export async function computeDashboardStats(): Promise<DashboardStatsPayload> {
   const currentMonth = currentDate.getMonth() + 1;
   const currentYear = currentDate.getFullYear();
 
-  const players = await db.player.findMany({
-    select: {
-      id: true,
-      name: true,
-      team: true,
-      active: true,
-      totalPayment: true,
-      paymentHistory: true,
-    },
-  });
+  const [players, teamMatchRows] = await Promise.all([
+    db.player.findMany({
+      select: {
+        id: true,
+        name: true,
+        team: true,
+        active: true,
+        totalPayment: true,
+        paymentHistory: true,
+      },
+    }),
+    db.teamMatch.findMany({
+      select: {
+        id: true,
+        teamName: true,
+        matchDate: true,
+        opponent: true,
+        isHome: true,
+        venue: true,
+      },
+      orderBy: { matchDate: 'asc' },
+    }),
+  ]);
+
+  const teamMatches = teamMatchRows.map((m) => ({
+    id: m.id,
+    teamName: m.teamName,
+    matchDate: m.matchDate.toISOString(),
+    opponent: m.opponent,
+    isHome: m.isHome,
+    venue: m.venue,
+  }));
 
   const totalPlayers = players.length;
   const activePlayerCount = players.filter((p) => p.active).length;
@@ -82,7 +112,7 @@ export async function computeDashboardStats(): Promise<DashboardStatsPayload> {
     const paid = sumPaymentHistory(history);
     totalExpected += total;
     amountCollectedAllTime += paid;
-    if (total > 0 && paid < total) {
+    if (p.active && total > 0 && paid < total) {
       playersWithUnpaidBills.push(p);
     }
     for (const e of history) {
@@ -91,17 +121,19 @@ export async function computeDashboardStats(): Promise<DashboardStatsPayload> {
       if (m === currentMonth && y === currentYear) {
         currentMonthCollected += e.amount ?? 0;
       }
-      recentEntries.push({
-        amount: e.amount ?? 0,
-        date: e.date,
-        playerId: p.id,
-        playerName: p.name,
-      });
+      if (p.active) {
+        recentEntries.push({
+          amount: e.amount ?? 0,
+          date: e.date,
+          playerId: p.id,
+          playerName: p.name,
+        });
+      }
     }
   }
 
   recentEntries.sort((a, b) => (b.date < a.date ? -1 : b.date > a.date ? 1 : 0));
-  const recentPayments = recentEntries.slice(0, 5).map((e) => ({
+  const recentPayments = recentEntries.map((e) => ({
     id: `${e.playerId}-${e.date}-${e.amount}`,
     amount: e.amount,
     paidDate: e.date,
@@ -141,5 +173,6 @@ export async function computeDashboardStats(): Promise<DashboardStatsPayload> {
     },
     recentPayments,
     playersWithUnpaidBills,
+    teamMatches,
   };
 }
