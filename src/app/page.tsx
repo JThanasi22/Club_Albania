@@ -1319,8 +1319,8 @@ export default function VolleyballTeamManager() {
             </div>
 
             <div className="flex flex-1 flex-col min-h-0">
-              <div className="grid auto-rows-fr grid-cols-1 items-stretch gap-4 sm:gap-5 lg:grid-cols-3 lg:gap-6 lg:[grid-template-columns:repeat(3,minmax(0,1fr))]">
-                <Card className="relative flex flex-col gap-4 overflow-hidden border-primary/25 bg-gradient-to-br from-card via-card to-primary/[0.06] py-4 dark:to-primary/10 sm:gap-5 sm:py-5 shadow-md shadow-primary/5">
+              <div className="grid auto-rows-auto items-start grid-cols-1 gap-4 sm:gap-5 lg:auto-rows-fr lg:items-stretch lg:grid-cols-3 lg:gap-6 lg:[grid-template-columns:repeat(3,minmax(0,1fr))]">
+                <Card className="dashboard-calendar-card relative flex flex-col gap-4 overflow-hidden border-primary/25 bg-gradient-to-br from-card via-card to-primary/[0.06] py-4 dark:to-primary/10 sm:gap-5 sm:py-5 shadow-md shadow-primary/5 max-lg:min-h-[34rem] max-lg:overflow-visible">
                   <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
                   <div className="pointer-events-none absolute -bottom-6 -left-6 h-20 w-20 rounded-full bg-orange-400/10 blur-2xl" />
                   <CardHeader className="relative shrink-0 px-4 sm:px-5">
@@ -1385,7 +1385,7 @@ export default function VolleyballTeamManager() {
                     <p className="text-center text-sm text-muted-foreground py-6">{dl.calendarNoMatchesFiltered}</p>
                   ) : (
                     <>
-                      <div className="flex justify-center rounded-2xl border border-primary/15 bg-background/70 p-0.5 shadow-inner backdrop-blur-sm">
+                      <div className="dashboard-match-calendar-wrapper flex justify-center items-start rounded-2xl border border-primary/15 bg-background/70 p-0.5 shadow-inner backdrop-blur-sm max-lg:min-h-[19rem] lg:items-stretch">
                         <DatePicker
                           mode="single"
                           locale={dateFnsSq}
@@ -1400,7 +1400,7 @@ export default function VolleyballTeamManager() {
                               "after:absolute after:bottom-1 after:left-1/2 after:h-1 after:w-1 after:-translate-x-1/2 after:rounded-full after:bg-primary after:content-['']",
                             ),
                           }}
-                          className="mx-auto w-full max-w-[min(100%,20rem)] [--cell-size:1.95rem] rounded-xl bg-transparent p-1 sm:[--cell-size:2.1rem] xl:[--cell-size:2.25rem]"
+                          className="dashboard-match-calendar mx-auto w-full min-w-0 max-w-full sm:max-w-[20rem] [--cell-size:2rem] sm:[--cell-size:2.1rem] xl:[--cell-size:2.25rem] rounded-xl bg-transparent p-1"
                         />
                       </div>
                       <div className="min-h-[3.5rem] max-h-36 overflow-y-auto rounded-xl border border-primary/10 bg-muted/25 p-2 touch-pan-y">
@@ -1450,18 +1450,18 @@ export default function VolleyballTeamManager() {
                     openDashboardListModal('recentPayments');
                   }
                 }}
-                className="h-0 min-h-full overflow-hidden cursor-pointer border-border transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+                className="h-0 min-h-full overflow-hidden max-lg:h-auto max-lg:min-h-0 max-lg:overflow-visible cursor-pointer border-border transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] motion-reduce:transition-none motion-reduce:hover:translate-y-0"
               >
                 <CardHeader className="shrink-0">
                   <CardTitle>{dl.recentPaymentsTitle}</CardTitle>
                   <CardDescription>{dl.recentPaymentsDescription}</CardDescription>
                 </CardHeader>
-                <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pt-0">
+                <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pt-0 max-lg:overflow-visible">
                   {!stats?.recentPayments || stats.recentPayments.length === 0 ? (
                     <p className="flex flex-1 items-center justify-center text-center text-gray-500 py-6 min-h-[12rem]">{dl.recentPaymentsEmpty}</p>
                   ) : (
                     <>
-                      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain touch-pan-y">
+                      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain touch-pan-y max-lg:overflow-visible max-lg:[&>*:nth-child(n+6)]:hidden">
                         {(stats?.recentPayments ?? []).map((payment) => (
                           <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                             <div className="flex items-center gap-3 min-w-0">
@@ -1504,13 +1504,13 @@ export default function VolleyballTeamManager() {
                     openDashboardListModal('unpaid');
                   }
                 }}
-                className="h-0 min-h-full overflow-hidden cursor-pointer border-border transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+                className="h-0 min-h-full overflow-hidden max-lg:h-auto max-lg:min-h-0 max-lg:overflow-visible cursor-pointer border-border transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] motion-reduce:transition-none motion-reduce:hover:translate-y-0"
               >
                 <CardHeader className="shrink-0">
                   <CardTitle>{dl.unpaidTitle}</CardTitle>
                   <CardDescription>{dl.unpaidDescription}</CardDescription>
                 </CardHeader>
-                <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pt-0">
+                <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden pt-0 max-lg:overflow-visible">
                   {!stats?.playersWithUnpaidBills || stats.playersWithUnpaidBills.length === 0 ? (
                     <div className="flex flex-1 flex-col items-center justify-center text-center py-8 min-h-[12rem]">
                       <CheckCircle className="w-12 h-12 mx-auto text-green-500 mb-2" />
@@ -1518,7 +1518,7 @@ export default function VolleyballTeamManager() {
                     </div>
                   ) : (
                     <>
-                      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-y-contain touch-pan-y">
+                      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-y-contain touch-pan-y max-lg:overflow-visible max-lg:[&>*:nth-child(n+6)]:hidden">
                         {(stats?.playersWithUnpaidBills ?? []).map((player) => (
                           <div key={player.id} className="flex items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                             <div className="flex items-center gap-3 min-w-0">
@@ -1718,8 +1718,7 @@ export default function VolleyballTeamManager() {
                       ))}
                     </div>
                     {/* Desktop Table Layout */}
-                    <div className="hidden sm:block overflow-x-auto">
-                    <Table>
+                    <Table stickyHorizontalScroll containerClassName="hidden sm:block">
                       <TableHeader>
                         <TableRow>
                           <TableHead>Foto</TableHead>
@@ -1858,7 +1857,6 @@ export default function VolleyballTeamManager() {
                         ))}
                       </TableBody>
                     </Table>
-                    </div>
                   </>
                 )}
               </CardContent>
@@ -2585,7 +2583,7 @@ export default function VolleyballTeamManager() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1.2fr_1.2fr_0.85fr]">
               <div className="space-y-2">
                 <Label htmlFor="joinDate">Data e Bashkimit</Label>
                 <Input
@@ -2604,13 +2602,13 @@ export default function VolleyballTeamManager() {
                   onChange={(e) => setPlayerForm({ ...playerForm, dateOfBirth: e.target.value })}
                 />
               </div>
-              <div className="space-y-2 sm:col-span-2 lg:col-span-1">
+              <div className="space-y-2">
                 <Label htmlFor="active">Statusi</Label>
                 <Select
                   value={playerForm.active ? 'active' : 'inactive'}
                   onValueChange={(value) => setPlayerForm({ ...playerForm, active: value === 'active' })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

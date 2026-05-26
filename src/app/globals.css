@@ -115,9 +115,171 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.556 0 0 / 0.45) transparent;
   }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 9999px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: oklch(0.556 0 0 / 0.35);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.556 0 0 / 0.55);
+    background-clip: padding-box;
+  }
+
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+.dark * {
+  scrollbar-color: oklch(0.708 0 0 / 0.4) transparent;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background: oklch(0.708 0 0 / 0.35);
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.708 0 0 / 0.55);
+}
+
+.custom-scrollbar-x {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.45 0 0 / 0.55) oklch(0.922 0 0 / 0.35);
+}
+
+.custom-scrollbar-x::-webkit-scrollbar {
+  height: 10px;
+}
+
+.custom-scrollbar-x::-webkit-scrollbar-track {
+  background: oklch(0.922 0 0 / 0.35);
+  border-radius: 9999px;
+  margin-inline: 4px;
+}
+
+.custom-scrollbar-x::-webkit-scrollbar-thumb {
+  background: oklch(0.45 0 0 / 0.55);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.custom-scrollbar-x::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.35 0 0 / 0.75);
+  background-clip: padding-box;
+}
+
+.dark .custom-scrollbar-x {
+  scrollbar-color: oklch(0.85 0 0 / 0.45) oklch(1 0 0 / 0.08);
+}
+
+.dark .custom-scrollbar-x::-webkit-scrollbar-track {
+  background: oklch(1 0 0 / 0.08);
+}
+
+.dark .custom-scrollbar-x::-webkit-scrollbar-thumb {
+  background: oklch(0.85 0 0 / 0.45);
+}
+
+.dark .custom-scrollbar-x::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.92 0 0 / 0.65);
+}
+
+.scrollbar-hide-x {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hide-x::-webkit-scrollbar {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+@media (max-width: 1023px) {
+  .dashboard-calendar-card {
+    min-height: 34rem !important;
+    overflow: visible !important;
+  }
+  .dashboard-match-calendar [data-day] {
+    min-width: 0 !important;
+  }
+  .dashboard-match-calendar [data-slot="button"] {
+    min-width: 0 !important;
+  }
+  .dashboard-match-calendar-wrapper {
+    min-height: 19rem !important;
+    height: auto !important;
+    align-items: flex-start !important;
+    overflow: visible !important;
+  }
+  .dashboard-match-calendar-wrapper > [data-slot="calendar"],
+  .dashboard-match-calendar-wrapper > .dashboard-match-calendar {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+}
+
+@keyframes tab-content-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes card-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-tab-in {
+  animation: tab-content-in 380ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  transform-origin: top center;
+}
+
+.animate-tab-in [data-slot="card"] {
+  animation: card-rise-in 520ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation-delay: 60ms;
+  will-change: transform, opacity;
+}
+
+.animate-tab-in [data-slot="card"]:nth-child(2) { animation-delay: 120ms; }
+.animate-tab-in [data-slot="card"]:nth-child(3) { animation-delay: 180ms; }
+.animate-tab-in [data-slot="card"]:nth-child(4) { animation-delay: 240ms; }
+.animate-tab-in [data-slot="card"]:nth-child(5) { animation-delay: 300ms; }
+.animate-tab-in [data-slot="card"]:nth-child(6) { animation-delay: 340ms; }
+.animate-tab-in [data-slot="card"]:nth-child(n+7) { animation-delay: 380ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-tab-in,
+  .animate-tab-in [data-slot="card"] {
+    animation: none;
   }
 }
 

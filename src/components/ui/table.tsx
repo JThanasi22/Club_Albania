@@ -2,19 +2,44 @@
 
 import * as React from "react"
 
+import { StickyHorizontalScroll } from "@/components/StickyHorizontalScroll"
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  containerClassName,
+  stickyHorizontalScroll = false,
+  ...props
+}: React.ComponentProps<"table"> & {
+  containerClassName?: string
+  stickyHorizontalScroll?: boolean
+}) {
+  const tableElement = (
+    <table
+      data-slot="table"
+      className={cn(
+        stickyHorizontalScroll ? "min-w-full w-max" : "w-full",
+        "caption-bottom text-sm",
+        className
+      )}
+      {...props}
+    />
+  )
+
+  if (stickyHorizontalScroll) {
+    return (
+      <StickyHorizontalScroll className={containerClassName}>
+        {tableElement}
+      </StickyHorizontalScroll>
+    )
+  }
+
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className={cn("relative w-full overflow-x-auto", containerClassName)}
     >
-      <table
-        data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
-        {...props}
-      />
+      {tableElement}
     </div>
   )
 }
