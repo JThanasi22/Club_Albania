@@ -31,6 +31,7 @@ import {
   buildPaymentReminderMessage,
   formatDueDateForPaymentReminder,
   getPaymentReminderWhatsAppHref,
+  getWhatsAppHref,
 } from '@/lib/whatsappPaymentReminder';
 import { getPlayerPaymentSummary, type PaymentEntry } from '@/lib/playerPaymentSummary';
 import { getDashboardLang } from '@/lang/dashboard';
@@ -208,6 +209,9 @@ export default function VolleyballTeamManager() {
   const [dashboardListModal, setDashboardListModal] = useState<null | 'recentPayments' | 'unpaid'>(null);
   const [dashboardListSearch, setDashboardListSearch] = useState('');
   const [playerRowSpotlightId, setPlayerRowSpotlightId] = useState<string | null>(null);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [broadcastIndex, setBroadcastIndex] = useState(0);
   const [matchCalendarMonth, setMatchCalendarMonth] = useState(() => new Date());
   const [matchCalendarSelected, setMatchCalendarSelected] = useState<Date | undefined>(undefined);
   const [dashboardCalendarTeamFilter, setDashboardCalendarTeamFilter] = useState<string[]>(() => [...TEAMS]);
@@ -474,6 +478,29 @@ export default function VolleyballTeamManager() {
     const msg = buildPaymentReminderMessage(amt, dueDisplay);
     const href = getPaymentReminderWhatsAppHref(digits, msg);
     window.open(href, '_blank', 'noopener,noreferrer');
+  };
+
+  const broadcastRecipients = useMemo(
+    () => (players || []).filter((p) => normalizePhoneForWhatsApp(p.phone)),
+    [players]
+  );
+  const broadcastSkippedCount = (players || []).length - broadcastRecipients.length;
+
+  const openBroadcastDialog = () => {
+    setBroadcastMessage('');
+    setBroadcastIndex(0);
+    setBroadcastOpen(true);
+  };
+
+  const sendBroadcastToCurrent = () => {
+    const player = broadcastRecipients[broadcastIndex];
+    if (!player) return;
+    const digits = normalizePhoneForWhatsApp(player.phone);
+    if (digits) {
+      const href = getWhatsAppHref(digits, broadcastMessage);
+      window.open(href, '_blank', 'noopener,noreferrer');
+    }
+    setBroadcastIndex((i) => i + 1);
   };
 
   // Player CRUD operations
@@ -1596,6 +1623,16 @@ export default function VolleyballTeamManager() {
                         <SelectItem value="lowestBalance">Shuma e mbetur: nga më e vogla</SelectItem>
                       </SelectContent>
                     </Select>
+                    <Button
+                      variant="outline"
+                      className="w-full sm:w-auto border-green-600/50 text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-950/40 disabled:opacity-40"
+                      onClick={openBroadcastDialog}
+                      disabled={broadcastRecipients.length === 0}
+                      title={broadcastRecipients.length === 0 ? 'Asnjë lojtar me numër të vlefshëm' : 'Dërgo një mesazh WhatsApp te të gjithë lojtarët'}
+                    >
+                      <MessageCircle className="w-4 h-4 mr-2" />
+                      Njofto të gjithë
+                    </Button>
                     <Button onClick={() => { resetPlayerForm(); setEditingPlayer(null); setPlayerDialogOpen(true); }} className="w-full sm:w-auto">
                       <Plus className="w-4 h-4 mr-2" />
                       Shto Lojtar
@@ -2903,6 +2940,69 @@ export default function VolleyballTeamManager() {
               </Button>
             </DialogFooter>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Broadcast WhatsApp Dialog */}
+      <Dialog open={broadcastOpen} onOpenChange={(open) => { if (!open) setBroadcastOpen(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Njofto të gjithë lojtarët (WhatsApp)</DialogTitle>
+            <DialogDescription>
+              Shkruani mesazhin, pastaj dërgojeni te çdo lojtar një nga një. Për secilin hapet WhatsApp me mesazhin gati — ju vetëm shtypni “Dërgo”.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="broadcast-message">Mesazhi *</Label>
+              <Textarea
+                id="broadcast-message"
+                value={broadcastMessage}
+                onChange={(e) => setBroadcastMessage(e.target.value)}
+                placeholder="Shkruani mesazhin për të gjithë lojtarët..."
+                rows={5}
+                disabled={broadcastIndex > 0}
+              />
+            </div>
+            <p className="text-sm text-gray-500">
+              {broadcastRecipients.length} lojtarë me numër të vlefshëm
+              {broadcastSkippedCount > 0 && ` · ${broadcastSkippedCount} pa numër (anashkalohen)`}
+            </p>
+            {broadcastRecipients.length > 0 && (
+              <div className="space-y-1">
+                <Progress value={(Math.min(broadcastIndex, broadcastRecipients.length) / broadcastRecipients.length) * 100} />
+                <p className="text-sm text-gray-500">
+                  {Math.min(broadcastIndex, broadcastRecipients.length)} / {broadcastRecipients.length} të dërguar
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            {broadcastIndex < broadcastRecipients.length ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setBroadcastIndex((i) => i + 1)}
+                  disabled={!broadcastMessage.trim()}
+                >
+                  Kalo {broadcastRecipients[broadcastIndex]?.name}
+                </Button>
+                <Button
+                  onClick={sendBroadcastToCurrent}
+                  disabled={!broadcastMessage.trim()}
+                  className="bg-green-600 text-white hover:bg-green-700"
+                >
+                  <MessageCircle className="w-4 h-4 mr-2" />
+                  Dërgo te {broadcastRecipients[broadcastIndex]?.name}
+                </Button>
+              </>
+            ) : (
+              <Button onClick={() => setBroadcastOpen(false)}>
+                <CheckCircle className="w-4 h-4 mr-2" />
+                U përfundua — Mbyll
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

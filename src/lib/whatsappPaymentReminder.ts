@@ -43,6 +43,10 @@ export function buildPaymentReminderMessage(amountLeftFormatted: string, dueDate
   ].join('\n');
 }
 
-export function getPaymentReminderWhatsAppHref(phoneDigits: string, message: string): string {
+export function getWhatsAppHref(phoneDigits: string, message: string): string {
   return `https://wa.me/${phoneDigits}?text=${encodeURIComponent(message)}`;
+}
+
+export function getPaymentReminderWhatsAppHref(phoneDigits: string, message: string): string {
+  return getWhatsAppHref(phoneDigits, message);
 }
