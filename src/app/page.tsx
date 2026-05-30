@@ -21,7 +21,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Users, TrendingUp, Calendar, Plus, Pencil, Trash2,
   CheckCircle, UserPlus, CreditCard, Search, Wallet,
-  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, FileDown, MessageCircle, LayoutGrid, Image as ImageIcon
+  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, FileDown, MessageCircle, LayoutGrid, Image as ImageIcon, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { sq as dateFnsSq } from 'date-fns/locale/sq';
@@ -501,6 +501,10 @@ export default function VolleyballTeamManager() {
       window.open(href, '_blank', 'noopener,noreferrer');
     }
     setBroadcastIndex((i) => i + 1);
+  };
+
+  const goBackBroadcast = () => {
+    setBroadcastIndex((i) => Math.max(0, i - 1));
   };
 
   // Player CRUD operations
@@ -2976,29 +2980,49 @@ export default function VolleyballTeamManager() {
                 </p>
               </div>
             )}
+            {broadcastIndex < broadcastRecipients.length && (
+              <p className="text-sm font-medium text-center break-words">
+                {broadcastRecipients[broadcastIndex]?.name}
+              </p>
+            )}
           </div>
-          <DialogFooter className="flex-col sm:flex-row gap-2">
+          <DialogFooter className="flex flex-col gap-2 sm:flex-col sm:justify-stretch">
+            {broadcastIndex > 0 && (
+              <Button
+                variant="outline"
+                onClick={goBackBroadcast}
+                className="w-full"
+                title={`Kthehu te ${broadcastRecipients[broadcastIndex - 1]?.name ?? ''}`}
+              >
+                <ChevronLeft className="w-4 h-4 mr-2 shrink-0" />
+                Kthehu
+              </Button>
+            )}
             {broadcastIndex < broadcastRecipients.length ? (
               <>
                 <Button
                   variant="outline"
                   onClick={() => setBroadcastIndex((i) => i + 1)}
                   disabled={!broadcastMessage.trim()}
+                  className="w-full"
+                  title={`Kalo ${broadcastRecipients[broadcastIndex]?.name ?? ''}`}
                 >
-                  Kalo {broadcastRecipients[broadcastIndex]?.name}
+                  Kalo
+                  <ChevronRight className="w-4 h-4 mr-2 shrink-0" />
                 </Button>
                 <Button
                   onClick={sendBroadcastToCurrent}
                   disabled={!broadcastMessage.trim()}
-                  className="bg-green-600 text-white hover:bg-green-700"
+                  className="w-full bg-green-600 text-white hover:bg-green-700"
+                  title={`Dërgo te ${broadcastRecipients[broadcastIndex]?.name ?? ''}`}
                 >
-                  <MessageCircle className="w-4 h-4 mr-2" />
-                  Dërgo te {broadcastRecipients[broadcastIndex]?.name}
+                  <MessageCircle className="w-4 h-4 mr-2 shrink-0" />
+                  Dërgo në WhatsApp
                 </Button>
               </>
             ) : (
-              <Button onClick={() => setBroadcastOpen(false)}>
-                <CheckCircle className="w-4 h-4 mr-2" />
+              <Button onClick={() => setBroadcastOpen(false)} className="w-full">
+                <CheckCircle className="w-4 h-4 mr-2 shrink-0" />
                 U përfundua — Mbyll
               </Button>
             )}
