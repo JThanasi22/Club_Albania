@@ -21,7 +21,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Users, TrendingUp, Calendar, Plus, Pencil, Trash2,
   CheckCircle, UserPlus, CreditCard, Search, Wallet,
-  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, FileDown, MessageCircle, LayoutGrid, Image as ImageIcon, ChevronLeft, ChevronRight
+  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, FileDown, MessageCircle, LayoutGrid, Image as ImageIcon, ChevronLeft, ChevronRight, ClipboardCheck
 } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { sq as dateFnsSq } from 'date-fns/locale/sq';
@@ -36,6 +36,8 @@ import {
 import { getPlayerPaymentSummary, type PaymentEntry } from '@/lib/playerPaymentSummary';
 import { getDashboardLang } from '@/lang/dashboard';
 import { getTeamsLang } from '@/lang/teams';
+import { getAttendanceLang } from '@/lang/attendance';
+import { AttendanceTab } from '@/components/AttendanceTab';
 import { parseFormationSlots, type FormationSlot } from '@/lib/teamFormation';
 import {
   parseVolleyballSets,
@@ -134,6 +136,7 @@ const DASHBOARD_CARD_MODAL_HINT_MIN_ITEMS = 6;
 
 const dl = getDashboardLang('sq');
 const teamsL = getTeamsLang('sq');
+const attendanceL = getAttendanceLang('sq');
 
 // Format currency in ALL (Albanian Lek)
 const formatCurrency = (amount: number) => {
@@ -1243,7 +1246,7 @@ export default function VolleyballTeamManager() {
       {/* Main Content */}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1 w-full overflow-hidden">
-          <TabsList className="grid w-full grid-cols-3 mb-4 sm:mb-6 h-auto gap-1">
+          <TabsList className="grid w-full grid-cols-4 mb-4 sm:mb-6 h-auto gap-1">
             <TabsTrigger value="dashboard" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
               <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="text-xs sm:text-sm">Përgjithësi</span>
@@ -1255,6 +1258,10 @@ export default function VolleyballTeamManager() {
             <TabsTrigger value="teams" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
               <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="text-xs sm:text-sm">{teamsL.tabShort}</span>
+            </TabsTrigger>
+            <TabsTrigger value="attendance" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
+              <ClipboardCheck className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="text-xs sm:text-sm">{attendanceL.tabShort}</span>
             </TabsTrigger>
           </TabsList>
 
@@ -1971,6 +1978,14 @@ export default function VolleyballTeamManager() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="attendance" className="flex flex-col flex-1 min-h-0 gap-6 overflow-y-auto outline-none">
+            <AttendanceTab
+              players={players}
+              operationInProgress={operationInProgress}
+              setOperationInProgress={setOperationInProgress}
+            />
           </TabsContent>
         </Tabs>
       </main>

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const PROTECTED_PREFIXES = ['/api/players', '/api/payments', '/api/stats', '/api/upload'];
+const PROTECTED_PREFIXES = ['/api/players', '/api/payments', '/api/stats', '/api/upload', '/api/attendance'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -24,5 +24,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/api/players/:path*', '/api/payments/:path*', '/api/stats/:path*', '/api/upload/:path*'],
+  matcher: ['/api/players/:path*', '/api/payments/:path*', '/api/stats/:path*', '/api/upload/:path*', '/api/attendance/:path*'],
 };

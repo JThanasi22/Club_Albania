@@ -10,6 +10,12 @@ const nextConfig: NextConfig = {
       "./node_modules/dejavu-fonts-ttf/ttf/DejaVuSans-Oblique.ttf",
       "./node_modules/dejavu-fonts-ttf/ttf/DejaVuSans-BoldOblique.ttf",
     ],
+    "/api/attendance/sessions/[id]/pdf": [
+      "./node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf",
+      "./node_modules/dejavu-fonts-ttf/ttf/DejaVuSans-Bold.ttf",
+      "./node_modules/dejavu-fonts-ttf/ttf/DejaVuSans-Oblique.ttf",
+      "./node_modules/dejavu-fonts-ttf/ttf/DejaVuSans-BoldOblique.ttf",
+    ],
   },
   typescript: {
     ignoreBuildErrors: true,

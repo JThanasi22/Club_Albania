@@ -85,3 +85,17 @@ model TeamMatch {
 
   @@index([teamName])
 }
+
+model PracticeAttendance {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  teamName    String
+  dateKey     String
+  sessionDate DateTime
+  records     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([teamName, dateKey])
+  @@index([teamName])
+  @@index([dateKey])
+}

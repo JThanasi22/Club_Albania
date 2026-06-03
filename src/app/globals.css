@@ -315,6 +315,10 @@
   animation: player-row-spotlight-pulse 4s cubic-bezier(0.45, 0, 0.2, 1) forwards;
 }
 
+.player-row-spotlight-3s {
+  animation-duration: 3s;
+}
+
 .dark .player-row-spotlight {
   outline-color: oklch(0.78 0.14 41);
 }
