@@ -30,12 +30,14 @@ import {
   ClipboardCheck,
   ChevronLeft,
   ChevronRight,
+  Check,
   CheckCircle2,
   FileDown,
   Loader2,
   AlertTriangle,
   Search,
   Trash2,
+  X,
 } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getAttendanceLang } from '@/lang/attendance';
@@ -69,7 +71,7 @@ type SessionDetail = AttendanceSessionSummary & {
   }[];
 };
 
-type MobileStep = 'landing' | 'teams' | 'overwrite' | 'wizard' | 'success';
+type MobileStep = 'landing' | 'teams' | 'overwrite' | 'wizard' | 'success' | 'editSession';
 type WizardLayout = 'cards' | 'list';
 
 type AttendanceTabProps = {
@@ -89,6 +91,12 @@ const L = getAttendanceLang('sq');
 
 const DIALOG_DETAIL_CLASS =
   'max-h-[min(92dvh,820px)] w-[calc(100vw-1rem)] max-w-2xl gap-0 overflow-hidden p-0 flex flex-col';
+
+const MOBILE_SHELL_CLASS = 'flex flex-col flex-1 min-h-0 overflow-hidden outline-none';
+const MOBILE_CARD_CLASS = 'flex flex-1 min-h-0 flex-col overflow-hidden gap-0 py-0';
+const MOBILE_CARD_HEADER_CLASS = 'shrink-0 gap-4 pb-4 pt-6';
+const MOBILE_CARD_CONTENT_CLASS =
+  'flex flex-1 min-h-0 flex-col overflow-y-auto overscroll-y-contain px-6 pb-6';
 
 function PlayerAvatar({
   name,
@@ -136,6 +144,33 @@ function StatusBadge({ present }: { present: boolean }) {
     <Badge variant="outline" className="text-muted-foreground">
       {L.statusAbsent}
     </Badge>
+  );
+}
+
+function MobilePlayerStatusToggle({
+  present,
+  disabled,
+  onToggle,
+}: {
+  present: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onToggle}
+      className={cn(
+        'shrink-0 flex h-10 w-10 items-center justify-center rounded-full border-2 transition-transform active:scale-95 disabled:opacity-50',
+        present
+          ? 'border-green-600 bg-green-600 text-white dark:border-green-500 dark:bg-green-600'
+          : 'border-red-600 bg-red-600 text-white dark:border-red-500 dark:bg-red-600',
+      )}
+      aria-label={present ? L.present : L.absent}
+    >
+      {present ? <Check className="w-5 h-5 stroke-[3]" /> : <X className="w-5 h-5 stroke-[3]" />}
+    </button>
   );
 }
 
@@ -253,8 +288,15 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
     });
   }, [detail, editPlayers]);
 
-  const resetMobileFlow = () => {
+  const backToMobileLanding = () => {
     setMobileStep('landing');
+    setDetail(null);
+    setEditPlayers([]);
+    setDetailOpen(false);
+  };
+
+  const resetMobileFlow = () => {
+    backToMobileLanding();
     setSelectedTeam(null);
     setRoster([]);
     setWizardIndex(0);
@@ -264,6 +306,11 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
     wizardAdvanceRef.current = null;
     setWizardListSpotlightIndex(null);
   };
+
+  const todaySessions = useMemo(
+    () => sessions.filter((s) => s.dateKey === todayKey),
+    [sessions, todayKey],
+  );
 
   const startFlow = () => {
     setMobileStep('teams');
@@ -396,8 +443,7 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
     }
   };
 
-  const openSessionDetail = async (sessionId: string) => {
-    setDetailOpen(true);
+  const loadSessionDetail = async (sessionId: string) => {
     setDetailLoading(true);
     setDetail(null);
     setEditPlayers([]);
@@ -407,15 +453,30 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
       const data = (await res.json()) as SessionDetail;
       setDetail(data);
       setEditPlayers(data.players);
+      return true;
     } catch {
       toast.error(L.toastLoadError);
-      setDetailOpen(false);
+      setDetail(null);
+      setEditPlayers([]);
+      return false;
     } finally {
       setDetailLoading(false);
     }
   };
 
-  const saveDetailChanges = async () => {
+  const openSessionDetail = async (sessionId: string) => {
+    setDetailOpen(true);
+    const ok = await loadSessionDetail(sessionId);
+    if (!ok) setDetailOpen(false);
+  };
+
+  const openMobileSessionEdit = async (sessionId: string) => {
+    setMobileStep('editSession');
+    const ok = await loadSessionDetail(sessionId);
+    if (!ok) setMobileStep('landing');
+  };
+
+  const saveDetailChanges = async (options?: { returnToLanding?: boolean }) => {
     if (!detail || !detailDirty) return;
     setOperationInProgress(true);
     try {
@@ -434,6 +495,9 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
       setLastSaved(null);
       await loadSessions();
       toast.success(L.toastUpdated);
+      if (options?.returnToLanding) {
+        backToMobileLanding();
+      }
     } catch {
       toast.error(L.toastUpdateError);
     } finally {
@@ -447,9 +511,13 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
       const res = await fetch(`/api/attendance/sessions/${sessionId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('delete');
       if (detail?.id === sessionId) {
-        setDetailOpen(false);
-        setDetail(null);
-        setEditPlayers([]);
+        if (detailOpen) {
+          setDetailOpen(false);
+          setDetail(null);
+          setEditPlayers([]);
+        } else {
+          backToMobileLanding();
+        }
       }
       await loadSessions();
       toast.success(L.toastDeleted);
@@ -517,8 +585,17 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
     if (mobileStep === 'success') {
       return { title: L.successTitle, description: L.pageDescription };
     }
+    if (mobileStep === 'editSession' && detail) {
+      return {
+        title: L.detailTitle(detail.teamName, formatSessionDateKey(detail.dateKey)),
+        description: L.detailRecorded(formatSessionRecordedAt(detail.updatedAt)),
+      };
+    }
+    if (mobileStep === 'editSession') {
+      return { title: L.todaySessionsTitle, description: L.loading };
+    }
     return { title: L.startCta, description: L.pageDescription };
-  }, [mobileStep, selectedTeam, roster, wizardIndex, todayDisplay]);
+  }, [mobileStep, selectedTeam, roster, wizardIndex, todayDisplay, detail]);
 
   const teamListUi = (
     <div className="space-y-2">
@@ -562,11 +639,11 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
   );
 
   const wizardCardsUi = wizardPlayer && (
-    <>
-      <div className="overflow-hidden px-1">
+    <div className="flex flex-col flex-1 min-h-0 gap-4">
+      <div className="flex flex-1 min-h-0 items-center overflow-hidden px-1">
         <motion.div
           key={wizardPlayer.id}
-          className="flex flex-col items-center gap-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+          className="flex w-full flex-col items-center gap-4 rounded-xl border border-border bg-card p-6 shadow-sm"
           initial={{ opacity: 0, x: 48 }}
           animate={
             wizardCardExiting
@@ -587,7 +664,7 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
           </div>
         </motion.div>
       </div>
-      <div className="flex flex-col gap-2">
+      <div className="flex shrink-0 flex-col gap-2">
         <Button
           type="button"
           size="lg"
@@ -609,13 +686,13 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
           {L.absent}
         </Button>
       </div>
-    </>
+    </div>
   );
 
   const wizardListUi = (
-    <>
-      <p className="text-xs text-muted-foreground">{L.listPresentHint}</p>
-      <div className="space-y-2 max-h-[min(52vh,420px)] overflow-y-auto -mx-1 px-1">
+    <div className="flex flex-col flex-1 min-h-0 gap-3">
+      <p className="text-xs text-muted-foreground shrink-0">{L.listPresentHint}</p>
+      <div className="flex-1 min-h-0 space-y-2 overflow-y-auto -mx-1 px-1">
         {roster.map((p, index) => {
           const isAbsent = attendanceByPlayer[p.id] === false;
           const showSpotlight = wizardListSpotlightIndex === index;
@@ -643,18 +720,18 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
       <Button
         type="button"
         size="lg"
-        className="w-full"
+        className="w-full shrink-0"
         disabled={operationInProgress}
         onClick={() => void submitAttendanceWithRecords(buildAttendanceRecords(attendanceByPlayer))}
       >
         {L.saveAttendance}
       </Button>
-    </>
+    </div>
   );
 
   const wizardBodyUi = selectedTeam && roster.length > 0 && (
-    <div className="space-y-4 py-2">
-      <div className="flex items-center gap-3">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 py-2">
+      <div className="flex shrink-0 items-center gap-3">
         <Progress
           value={
             wizardLayout === 'cards'
@@ -665,8 +742,86 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
         />
         {wizardLayoutToggle}
       </div>
-      {wizardLayout === 'cards' ? wizardCardsUi : wizardListUi}
+      <div className="flex min-h-0 flex-1 flex-col">
+        {wizardLayout === 'cards' ? wizardCardsUi : wizardListUi}
+      </div>
     </div>
+  );
+
+  const mobileTodaySessionsUi = (
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold text-foreground">{L.todaySessionsTitle}</h3>
+      {sessionsLoading ? (
+        <p className="text-sm text-muted-foreground py-2">{L.loading}</p>
+      ) : todaySessions.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-2">{L.emptyTodaySessions}</p>
+      ) : (
+        <div className="space-y-2">
+          {todaySessions.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              disabled={operationInProgress}
+              onClick={() => void openMobileSessionEdit(s.id)}
+              className={cn(
+                'flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-card p-4 text-left shadow-sm transition-colors min-h-[56px]',
+                'hover:bg-accent/50 active:bg-accent/70',
+              )}
+            >
+              <span className="text-lg font-semibold text-foreground">{s.teamName}</span>
+              <span className="flex items-center gap-2 text-sm text-muted-foreground shrink-0">
+                <Badge variant="secondary">
+                  {s.presentCount}/{s.totalCount}
+                </Badge>
+                <ChevronRight className="w-5 h-5" />
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const mobileEditSessionUi = (
+    <>
+      {detailLoading ? (
+        <div className="flex flex-1 items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+        </div>
+      ) : detail ? (
+        <div className="flex flex-1 min-h-0 flex-col gap-4">
+          <p className="text-xs text-muted-foreground shrink-0">{L.tapStatusToToggle}</p>
+          <div className="flex-1 min-h-0 space-y-2 overflow-y-auto -mx-1 px-1">
+            {editPlayers.map((p) => (
+              <div
+                key={p.playerId}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg border border-border bg-card p-3 shadow-sm',
+                  !p.present && 'bg-red-50 dark:bg-red-950/40',
+                )}
+              >
+                <PlayerAvatar name={p.name} photo={p.photo} size="sm" />
+                <span className="flex-1 min-w-0 font-medium text-sm text-foreground truncate">{p.name}</span>
+                <MobilePlayerStatusToggle
+                  present={p.present}
+                  disabled={operationInProgress}
+                  onToggle={() => setPlayerPresent(p.playerId, !p.present)}
+                />
+              </div>
+            ))}
+          </div>
+          <Button
+            type="button"
+            size="lg"
+            className="w-full shrink-0"
+            disabled={operationInProgress || !detailDirty}
+            onClick={() => void saveDetailChanges({ returnToLanding: true })}
+          >
+            {operationInProgress ? L.saving : L.saveChanges}
+          </Button>
+        </div>
+      ) : null}
+    </>
   );
 
   const successBodyUi = lastSaved && (
@@ -818,11 +973,17 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
 
   if (isMobile && mobileStep !== 'landing') {
     return (
-      <div className="flex flex-col flex-1 min-h-0 gap-6 overflow-y-auto outline-none">
-        <Card>
-          <CardHeader>
+      <div className={MOBILE_SHELL_CLASS}>
+        <Card className={MOBILE_CARD_CLASS}>
+          <CardHeader className={MOBILE_CARD_HEADER_CLASS}>
             <div className="flex items-center gap-2">
-              <Button type="button" variant="ghost" size="sm" className="w-fit -ml-2" onClick={resetMobileFlow}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-fit -ml-2"
+                onClick={mobileStep === 'editSession' ? backToMobileLanding : resetMobileFlow}
+              >
                 <ChevronLeft className="w-4 h-4 mr-1" />
                 {L.back}
               </Button>
@@ -843,7 +1004,7 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
               </>
             )}
           </CardHeader>
-          <CardContent>
+          <CardContent className={MOBILE_CARD_CONTENT_CLASS}>
             {mobileStep === 'teams' && teamListUi}
             {mobileStep === 'overwrite' && selectedTeam && (
               <div className="flex flex-col gap-2">
@@ -856,6 +1017,7 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
               </div>
             )}
             {mobileStep === 'wizard' && wizardBodyUi}
+            {mobileStep === 'editSession' && mobileEditSessionUi}
             {mobileStep === 'success' && (
               <>
                 {successBodyUi}
@@ -867,19 +1029,30 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
           </CardContent>
         </Card>
         {detailDialog}
+        <ConfirmDialog
+          open={confirmDialog.open}
+          onOpenChange={(open) => setConfirmDialog((c) => ({ ...c, open }))}
+          title={confirmDialog.title}
+          description={confirmDialog.description}
+          onConfirm={confirmDialog.onConfirm}
+          variant={confirmDialog.variant}
+          confirmText={L.deleteSession}
+          cancelText={L.cancel}
+        />
       </div>
     );
   }
 
   if (isMobile && mobileStep === 'landing') {
     return (
-      <div className="flex flex-col flex-1 min-h-0 gap-6 overflow-y-auto outline-none">
-        <Card>
-          <CardHeader>
+      <div className={MOBILE_SHELL_CLASS}>
+        <Card className={MOBILE_CARD_CLASS}>
+          <CardHeader className={MOBILE_CARD_HEADER_CLASS}>
             <CardTitle>{L.pageTitle}</CardTitle>
             <CardDescription>{L.pageDescription}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className={cn(MOBILE_CARD_CONTENT_CLASS, 'space-y-6')}>
+            {mobileTodaySessionsUi}
             <Button
               type="button"
               onClick={startFlow}
@@ -892,6 +1065,16 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
           </CardContent>
         </Card>
         {detailDialog}
+        <ConfirmDialog
+          open={confirmDialog.open}
+          onOpenChange={(open) => setConfirmDialog((c) => ({ ...c, open }))}
+          title={confirmDialog.title}
+          description={confirmDialog.description}
+          onConfirm={confirmDialog.onConfirm}
+          variant={confirmDialog.variant}
+          confirmText={L.deleteSession}
+          cancelText={L.cancel}
+        />
       </div>
     );
   }

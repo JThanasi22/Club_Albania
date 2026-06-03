@@ -61,6 +61,22 @@ const sq = {
   viewCards: 'Letra',
   listPresentHint: 'Pa shenjë = prezent',
   saveAttendance: 'Regjistro prezencën',
+  todaySessionsTitle: 'Prezenca e sotme',
+  emptyTodaySessions: 'Ende nuk ka prezencë për sot',
+  tapStatusToToggle: 'Prek ikonën për të ndryshuar statusin',
+  practiceAttendanceSectionTitle: 'Mungesat në stërvitje',
+  tapChartForMisses: 'Prek grafikun për listën e mungesave',
+  practiceMissed: 'Munguar',
+  practicePresent: 'Prezent',
+  noPracticeAttendance: 'Pa të dhëna prezence',
+  practiceMissRate: (pct: number) => `${pct}% mungesa në stërvitje`,
+  openMissedPracticesModal: (name: string, pct: number) =>
+    `Shiko mungesat e ${name} (${pct}% mungesa)`,
+  missedPracticesModalTitle: (name: string) => `Mungesat në stërvitje — ${name}`,
+  missedPracticesModalDescription: (missed: number, total: number, pct: number) =>
+    `${missed} nga ${total} stërvitje (${pct}% mungesa)`,
+  missedPracticesEmpty: 'Nuk ka mungesa të regjistruara',
+  missedPracticeRecorded: (when: string) => `Regjistruar: ${when}`,
 } as const;
 
 const en = {
@@ -126,6 +142,22 @@ const en = {
   viewCards: 'Cards',
   listPresentHint: 'Unchecked = present',
   saveAttendance: 'Save attendance',
+  todaySessionsTitle: "Today's attendance",
+  emptyTodaySessions: 'No attendance recorded today yet',
+  tapStatusToToggle: 'Tap the icon to change status',
+  practiceAttendanceSectionTitle: 'Missed practices',
+  tapChartForMisses: 'Tap the chart to see missed sessions',
+  practiceMissed: 'Missed',
+  practicePresent: 'Present',
+  noPracticeAttendance: 'No attendance data',
+  practiceMissRate: (pct: number) => `${pct}% missed practices`,
+  openMissedPracticesModal: (name: string, pct: number) =>
+    `View ${name}'s missed practices (${pct}% missed)`,
+  missedPracticesModalTitle: (name: string) => `Missed practices — ${name}`,
+  missedPracticesModalDescription: (missed: number, total: number, pct: number) =>
+    `${missed} of ${total} practices (${pct}% missed)`,
+  missedPracticesEmpty: 'No missed practices recorded',
+  missedPracticeRecorded: (when: string) => `Recorded: ${when}`,
 } as const;
 
 export const attendanceLocales = { sq, en } as const;

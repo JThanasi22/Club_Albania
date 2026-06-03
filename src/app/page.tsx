@@ -38,6 +38,8 @@ import { getDashboardLang } from '@/lang/dashboard';
 import { getTeamsLang } from '@/lang/teams';
 import { getAttendanceLang } from '@/lang/attendance';
 import { AttendanceTab } from '@/components/AttendanceTab';
+import { PlayerPracticeAttendanceSection } from '@/components/PlayerPracticeAttendanceSection';
+import type { PlayerAttendanceSummaryMap } from '@/lib/playerAttendanceSummary';
 import { parseFormationSlots, type FormationSlot } from '@/lib/teamFormation';
 import {
   parseVolleyballSets,
@@ -201,6 +203,7 @@ export default function VolleyballTeamManager() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [stats, setStats] = useState<Stats | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [playerAttendanceSummary, setPlayerAttendanceSummary] = useState<PlayerAttendanceSummaryMap>({});
   const [loading, setLoading] = useState(true);
 
   const [playerDialogOpen, setPlayerDialogOpen] = useState(false);
@@ -370,8 +373,24 @@ export default function VolleyballTeamManager() {
     }
   };
 
+  const fetchPlayerAttendanceSummary = async () => {
+    try {
+      const res = await fetch('/api/attendance/player-summary');
+      if (!res.ok) throw new Error('summary');
+      const data = await res.json();
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        setPlayerAttendanceSummary(data as PlayerAttendanceSummaryMap);
+      } else {
+        setPlayerAttendanceSummary({});
+      }
+    } catch (error) {
+      console.error('Error fetching player attendance summary:', error);
+      setPlayerAttendanceSummary({});
+    }
+  };
+
   const refreshAllData = async () => {
-    await Promise.all([fetchStats(), fetchPlayers()]);
+    await Promise.all([fetchStats(), fetchPlayers(), fetchPlayerAttendanceSummary()]);
   };
 
   useEffect(() => {
@@ -384,6 +403,12 @@ export default function VolleyballTeamManager() {
       initFetch();
     }
   }, [authenticated]);
+
+  useEffect(() => {
+    if (authenticated && activeTab === 'players') {
+      void fetchPlayerAttendanceSummary();
+    }
+  }, [authenticated, activeTab]);
 
   // Handle photo upload to Cloudinary
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1980,7 +2005,7 @@ export default function VolleyballTeamManager() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="attendance" className="flex flex-col flex-1 min-h-0 gap-6 overflow-y-auto outline-none">
+          <TabsContent value="attendance" className="flex flex-col flex-1 min-h-0 overflow-hidden outline-none max-sm:gap-0 sm:gap-6 sm:overflow-y-auto">
             <AttendanceTab
               players={players}
               operationInProgress={operationInProgress}
@@ -2743,6 +2768,11 @@ export default function VolleyballTeamManager() {
                   </Badge>
                 </div>
               </div>
+
+              <PlayerPracticeAttendanceSection
+                playerName={viewingPlayer.name}
+                summary={playerAttendanceSummary[viewingPlayer.id]}
+              />
 
               {(() => {
                 const { totalBills, amountPaid, amountLeft } = getPlayerPaymentSummary(viewingPlayer);
