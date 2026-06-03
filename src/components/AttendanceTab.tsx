@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { Checkbox } from '@/components/ui/checkbox';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -378,10 +377,6 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
     setWizardCardExiting(true);
   };
 
-  const setListPlayerAbsent = (playerId: string, absent: boolean) => {
-    setAttendanceByPlayer((prev) => ({ ...prev, [playerId]: !absent }));
-  };
-
   const toggleWizardLayout = () => {
     setWizardLayout((v) => (v === 'cards' ? 'list' : 'cards'));
   };
@@ -691,10 +686,10 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
 
   const wizardListUi = (
     <div className="flex flex-col flex-1 min-h-0 gap-3">
-      <p className="text-xs text-muted-foreground shrink-0">{L.listPresentHint}</p>
+      <p className="text-xs text-muted-foreground shrink-0">{L.tapStatusToToggle}</p>
       <div className="flex-1 min-h-0 space-y-2 overflow-y-auto -mx-1 px-1">
         {roster.map((p, index) => {
-          const isAbsent = attendanceByPlayer[p.id] === false;
+          const present = attendanceByPlayer[p.id] ?? true;
           const showSpotlight = wizardListSpotlightIndex === index;
           return (
             <div
@@ -702,16 +697,18 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
               ref={showSpotlight ? wizardListHighlightRef : undefined}
               className={cn(
                 'flex items-center gap-3 rounded-lg border border-border bg-card p-3 shadow-sm',
+                !present && 'bg-red-50 dark:bg-red-950/40',
                 showSpotlight && 'player-row-spotlight player-row-spotlight-3s',
               )}
             >
               <PlayerAvatar name={p.name} photo={p.photo} size="sm" />
               <span className="flex-1 min-w-0 font-medium text-sm text-foreground truncate">{p.name}</span>
-              <Checkbox
-                checked={isAbsent}
+              <MobilePlayerStatusToggle
+                present={present}
                 disabled={operationInProgress}
-                aria-label={isAbsent ? L.absent : L.present}
-                onCheckedChange={(checked) => setListPlayerAbsent(p.id, checked === true)}
+                onToggle={() =>
+                  setAttendanceByPlayer((prev) => ({ ...prev, [p.id]: !(prev[p.id] ?? true) }))
+                }
               />
             </div>
           );
