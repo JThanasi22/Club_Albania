@@ -44,6 +44,7 @@ import {
   CLUB_TEAMS,
   getAttendanceDateKey,
   formatAttendanceDisplayDate,
+  sessionDateFromDateKey,
   type AttendanceRecord,
 } from '@/lib/attendance';
 import {
@@ -73,6 +74,12 @@ type SessionDetail = AttendanceSessionSummary & {
 type MobileStep = 'landing' | 'teams' | 'overwrite' | 'wizard' | 'success' | 'editSession';
 type WizardLayout = 'cards' | 'list';
 
+export type AttendanceFlowBootstrap = {
+  teamName: string;
+  dateKey: string;
+  sessionAt: string;
+};
+
 type AttendanceTabProps = {
   players: {
     id: string;
@@ -84,6 +91,8 @@ type AttendanceTabProps = {
   }[];
   operationInProgress: boolean;
   setOperationInProgress: (v: boolean) => void;
+  flowBootstrap: AttendanceFlowBootstrap | null;
+  onFlowBootstrapConsumed: () => void;
 };
 
 const L = getAttendanceLang('sq');
@@ -201,11 +210,21 @@ function PlayerStatusEditor({
 
 const WIZARD_SWIPE_TRANSITION = { duration: 0.28, ease: [0.32, 0.72, 0, 1] as const };
 
-export function AttendanceTab({ players, operationInProgress, setOperationInProgress }: AttendanceTabProps) {
+export function AttendanceTab({
+  players,
+  operationInProgress,
+  setOperationInProgress,
+  flowBootstrap,
+  onFlowBootstrapConsumed,
+}: AttendanceTabProps) {
   const isMobile = useIsMobile();
   const reduceMotion = useReducedMotion();
   const todayKey = useMemo(() => getAttendanceDateKey(), []);
-  const todayDisplay = formatAttendanceDisplayDate(todayKey);
+  const [flowDateKey, setFlowDateKey] = useState(todayKey);
+  const [flowSessionAt, setFlowSessionAt] = useState(() =>
+    sessionDateFromDateKey(todayKey).toISOString(),
+  );
+  const flowDateDisplay = formatAttendanceDisplayDate(flowDateKey);
 
   const [sessions, setSessions] = useState<AttendanceSessionSummary[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
@@ -311,16 +330,26 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
     [sessions, todayKey],
   );
 
+  const beginFlowForDate = (dateKey: string, sessionAt: string) => {
+    setFlowDateKey(dateKey);
+    setFlowSessionAt(sessionAt);
+  };
+
   const startFlow = () => {
+    const dateKey = getAttendanceDateKey();
+    beginFlowForDate(dateKey, sessionDateFromDateKey(dateKey).toISOString());
     setMobileStep('teams');
   };
 
-  const startTeamFlow = async (teamName: string) => {
+  const startTeamFlow = async (teamName: string, dateKey: string, sessionAt: string) => {
     setOperationInProgress(true);
     try {
+      beginFlowForDate(dateKey, sessionAt);
       const [rosterRes, checkRes] = await Promise.all([
         fetch(`/api/attendance/roster?teamName=${encodeURIComponent(teamName)}`),
-        fetch(`/api/attendance/check?teamName=${encodeURIComponent(teamName)}`),
+        fetch(
+          `/api/attendance/check?teamName=${encodeURIComponent(teamName)}&dateKey=${encodeURIComponent(dateKey)}`,
+        ),
       ]);
       if (!rosterRes.ok || !checkRes.ok) throw new Error('load');
       const rosterData = (await rosterRes.json()) as { players: RosterPlayer[] };
@@ -348,6 +377,13 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
       setOperationInProgress(false);
     }
   };
+
+  useEffect(() => {
+    if (!flowBootstrap) return;
+    const { teamName, dateKey, sessionAt } = flowBootstrap;
+    onFlowBootstrapConsumed();
+    void startTeamFlow(teamName, dateKey, sessionAt);
+  }, [flowBootstrap, onFlowBootstrapConsumed]);
 
   const buildAttendanceRecords = useCallback(
     (map: Record<string, boolean>): AttendanceRecord[] =>
@@ -415,7 +451,12 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
       const res = await fetch('/api/attendance/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamName: selectedTeam, records }),
+        body: JSON.stringify({
+          teamName: selectedTeam,
+          records,
+          dateKey: flowDateKey,
+          sessionAt: flowSessionAt,
+        }),
       });
       if (!res.ok) throw new Error('save');
       const saved = (await res.json()) as AttendanceSessionSummary;
@@ -566,10 +607,10 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
 
   const flowDialogMeta = useMemo(() => {
     if (mobileStep === 'teams') {
-      return { title: L.chooseTeam, description: L.attendanceForDate(todayDisplay) };
+      return { title: L.chooseTeam, description: L.attendanceForDate(flowDateDisplay) };
     }
     if (mobileStep === 'overwrite' && selectedTeam) {
-      return { title: L.overwriteTitle, description: L.overwriteBody(selectedTeam) };
+      return { title: L.overwriteTitle, description: L.overwriteBody(selectedTeam, flowDateDisplay) };
     }
     if (mobileStep === 'wizard' && selectedTeam && roster[wizardIndex]) {
       return {
@@ -590,7 +631,7 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
       return { title: L.todaySessionsTitle, description: L.loading };
     }
     return { title: L.startCta, description: L.pageDescription };
-  }, [mobileStep, selectedTeam, roster, wizardIndex, todayDisplay, detail]);
+  }, [mobileStep, selectedTeam, roster, wizardIndex, flowDateDisplay, detail]);
 
   const teamListUi = (
     <div className="space-y-2">
@@ -602,7 +643,9 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
             key={team}
             type="button"
             disabled={disabled || operationInProgress}
-            onClick={() => void startTeamFlow(team)}
+            onClick={() =>
+              void startTeamFlow(team, flowDateKey, flowSessionAt)
+            }
             className={cn(
               'flex w-full items-center justify-between rounded-lg border border-border bg-card p-4 text-left shadow-sm transition-colors min-h-[56px]',
               disabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-accent/50',
@@ -968,7 +1011,7 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
     </Dialog>
   );
 
-  if (isMobile && mobileStep !== 'landing') {
+  if (mobileStep !== 'landing') {
     return (
       <div className={MOBILE_SHELL_CLASS}>
         <Card className={MOBILE_CARD_CLASS}>
@@ -997,7 +1040,7 @@ export function AttendanceTab({ players, operationInProgress, setOperationInProg
                   <AlertTriangle className="w-5 h-5 text-amber-500" />
                   {L.overwriteTitle}
                 </CardTitle>
-                <CardDescription>{L.overwriteBody(selectedTeam)}</CardDescription>
+                <CardDescription>{L.overwriteBody(selectedTeam, flowDateDisplay)}</CardDescription>
               </>
             )}
           </CardHeader>

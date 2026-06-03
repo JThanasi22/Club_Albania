@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import {
   getAttendanceDateKey,
+  isValidAttendanceDateKey,
   sessionDateFromDateKey,
   validateAttendanceRecords,
   type AttendanceRecord,
@@ -48,8 +49,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Regjistrimi i plotë i prezencës kërkohet' }, { status: 400 });
     }
 
-    const dateKey = getAttendanceDateKey();
-    const sessionDate = sessionDateFromDateKey(dateKey);
+    const dateKeyRaw = typeof body.dateKey === 'string' ? body.dateKey.trim() : '';
+    const dateKey =
+      dateKeyRaw && isValidAttendanceDateKey(dateKeyRaw) ? dateKeyRaw : getAttendanceDateKey();
+
+    let sessionDate: Date;
+    if (typeof body.sessionAt === 'string' && body.sessionAt.trim()) {
+      const parsed = new Date(body.sessionAt);
+      if (Number.isNaN(parsed.getTime())) {
+        return NextResponse.json({ error: 'Data e sesionit nuk është valide' }, { status: 400 });
+      }
+      sessionDate = parsed;
+    } else {
+      sessionDate = sessionDateFromDateKey(dateKey);
+    }
 
     const session = await db.practiceAttendance.upsert({
       where: { teamName_dateKey: { teamName, dateKey } },

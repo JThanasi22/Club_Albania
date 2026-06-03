@@ -20,6 +20,55 @@ export function sessionDateFromDateKey(dateKey: string): Date {
   return new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0));
 }
 
+function readTiraneParts(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIRANE_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const pick = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return {
+    year: Number(pick('year')),
+    month: Number(pick('month')),
+    day: Number(pick('day')),
+    hour: Number(pick('hour')),
+    minute: Number(pick('minute')),
+  };
+}
+
+export function sessionDateFromDateAndTime(dateKey: string, timeHm: string): Date | null {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(timeHm);
+  if (!dateMatch || !timeMatch) return null;
+
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const day = Number(dateMatch[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  if (hour > 23 || minute > 59) return null;
+
+  let t = Date.UTC(year, month - 1, day, hour - 1, minute);
+  for (let i = 0; i < 8; i++) {
+    const got = readTiraneParts(new Date(t));
+    if (got.year === year && got.month === month && got.day === day && got.hour === hour && got.minute === minute) {
+      return new Date(t);
+    }
+    t +=
+      ((year - got.year) * 372 + (month - got.month) * 31 + (day - got.day)) * 86_400_000 +
+      ((hour - got.hour) * 60 + (minute - got.minute)) * 60_000;
+  }
+  return new Date(t);
+}
+
+export function isValidAttendanceDateKey(dateKey: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateKey);
+}
+
 export function countAttendance(records: AttendanceRecord[]): { presentCount: number; totalCount: number } {
   const presentCount = records.filter((r) => r.present).length;
   return { presentCount, totalCount: records.length };

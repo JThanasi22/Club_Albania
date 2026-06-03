@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo, type MouseEvent } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, type MouseEvent } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -37,7 +37,8 @@ import { getPlayerPaymentSummary, type PaymentEntry } from '@/lib/playerPaymentS
 import { getDashboardLang } from '@/lang/dashboard';
 import { getTeamsLang } from '@/lang/teams';
 import { getAttendanceLang } from '@/lang/attendance';
-import { AttendanceTab } from '@/components/AttendanceTab';
+import { AttendanceTab, type AttendanceFlowBootstrap } from '@/components/AttendanceTab';
+import { sessionDateFromDateAndTime } from '@/lib/attendance';
 import { PlayerPracticeAttendanceSection } from '@/components/PlayerPracticeAttendanceSection';
 import type { PlayerAttendanceSummaryMap } from '@/lib/playerAttendanceSummary';
 import { parseFormationSlots, type FormationSlot } from '@/lib/teamFormation';
@@ -133,6 +134,15 @@ const MONTHS = [
 const TEAMS = [
   'U20', 'U18', 'U16', 'U14', 'U10'
 ];
+
+function tiraneTimeHmNow(): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Tirane',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date());
+}
 
 const DASHBOARD_CARD_MODAL_HINT_MIN_ITEMS = 6;
 
@@ -238,6 +248,18 @@ export default function VolleyballTeamManager() {
   const [matchSubmitting, setMatchSubmitting] = useState(false);
   const [addMatchModalOpen, setAddMatchModalOpen] = useState(false);
   const [addMatchOurTeam, setAddMatchOurTeam] = useState(TEAMS[0]);
+  const [createAttendanceModalOpen, setCreateAttendanceModalOpen] = useState(false);
+  const [createAttendanceTeam, setCreateAttendanceTeam] = useState(TEAMS[0]);
+  const [createAttendanceDate, setCreateAttendanceDate] = useState(() =>
+    new Date().toISOString().split('T')[0],
+  );
+  const [createAttendanceTime, setCreateAttendanceTime] = useState(tiraneTimeHmNow);
+  const [attendanceFlowBootstrap, setAttendanceFlowBootstrap] = useState<AttendanceFlowBootstrap | null>(
+    null,
+  );
+  const consumeAttendanceFlowBootstrap = useCallback(() => {
+    setAttendanceFlowBootstrap(null);
+  }, []);
   const [matchScoreDrafts, setMatchScoreDrafts] = useState<
     Record<string, { sets: { our: string; their: string }[] }>
   >({});
@@ -849,6 +871,27 @@ export default function VolleyballTeamManager() {
     setAddMatchOurTeam(TEAMS[0]);
   };
 
+  const resetCreateAttendanceForm = () => {
+    setCreateAttendanceTeam(TEAMS[0]);
+    setCreateAttendanceDate(new Date().toISOString().split('T')[0]);
+    setCreateAttendanceTime(tiraneTimeHmNow());
+  };
+
+  const submitCreateAttendanceModal = () => {
+    const sessionDate = sessionDateFromDateAndTime(createAttendanceDate, createAttendanceTime);
+    if (!sessionDate) {
+      toast.error(attendanceL.toastInvalidDateTime);
+      return;
+    }
+    setCreateAttendanceModalOpen(false);
+    setAttendanceFlowBootstrap({
+      teamName: createAttendanceTeam,
+      dateKey: createAttendanceDate,
+      sessionAt: sessionDate.toISOString(),
+    });
+    setActiveTab('attendance');
+  };
+
   const openTeamsFormation = async (teamName: string) => {
     setTeamsFormationTeam(teamName);
     setTeamsFormationLoading(true);
@@ -1241,6 +1284,20 @@ export default function VolleyballTeamManager() {
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="hidden sm:flex"
+                onClick={() => {
+                  resetCreateAttendanceForm();
+                  setCreateAttendanceTeam(teamRows[0]?.[0] ?? TEAMS[0]);
+                  setCreateAttendanceModalOpen(true);
+                }}
+              >
+                <ClipboardCheck className="w-4 h-4 mr-2" />
+                {attendanceL.headerCreateAttendance}
+              </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -2010,6 +2067,8 @@ export default function VolleyballTeamManager() {
               players={players}
               operationInProgress={operationInProgress}
               setOperationInProgress={setOperationInProgress}
+              flowBootstrap={attendanceFlowBootstrap}
+              onFlowBootstrapConsumed={consumeAttendanceFlowBootstrap}
             />
           </TabsContent>
         </Tabs>
@@ -2306,6 +2365,70 @@ export default function VolleyballTeamManager() {
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setResultGraphicMatchId(null)}>
               {teamsL.close}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={createAttendanceModalOpen}
+        onOpenChange={(open) => {
+          setCreateAttendanceModalOpen(open);
+          if (!open) resetCreateAttendanceForm();
+        }}
+      >
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{attendanceL.createAttendanceModalTitle}</DialogTitle>
+            <DialogDescription>{attendanceL.createAttendanceModalDescription}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2">
+              <Label>{attendanceL.chooseTeam}</Label>
+              <Select value={createAttendanceTeam} onValueChange={setCreateAttendanceTeam}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TEAMS.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{attendanceL.colDate}</Label>
+              <Input
+                type="date"
+                value={createAttendanceDate}
+                onChange={(e) => setCreateAttendanceDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{attendanceL.colTime}</Label>
+              <Input
+                type="time"
+                value={createAttendanceTime}
+                onChange={(e) => setCreateAttendanceTime(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateAttendanceModalOpen(false)}
+            >
+              {attendanceL.cancel}
+            </Button>
+            <Button
+              type="button"
+              onClick={submitCreateAttendanceModal}
+              disabled={!createAttendanceDate || !createAttendanceTime}
+            >
+              {attendanceL.startRecording}
             </Button>
           </DialogFooter>
         </DialogContent>

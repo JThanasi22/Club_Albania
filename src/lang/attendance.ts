@@ -18,8 +18,14 @@ const sq = {
   successPresent: 'Prezent',
   successBack: 'Kthehu te prezenca',
   overwriteTitle: 'Prezenca ekziston',
-  overwriteBody: (team: string) =>
-    `Për ekipin ${team} është regjistruar tashmë prezenca për sot. Dëshironi ta zëvendësoni?`,
+  overwriteBody: (team: string, date: string) =>
+    `Për ekipin ${team} është regjistruar tashmë prezenca për ${date}. Dëshironi ta zëvendësoni?`,
+  headerCreateAttendance: 'Regjistro prezencën',
+  createAttendanceModalTitle: 'Regjistro prezencën',
+  createAttendanceModalDescription: 'Zgjidhni ekipin, datën dhe orën, pastaj shënoni prezencën për çdo lojtar.',
+  colTime: 'Ora',
+  startRecording: 'Vazhdo',
+  toastInvalidDateTime: 'Data ose ora nuk është valide',
   overwriteConfirm: 'Zëvendëso',
   cancel: 'Anulo',
   colDate: 'Data',
@@ -99,8 +105,14 @@ const en = {
   successPresent: 'Present',
   successBack: 'Back to attendance',
   overwriteTitle: 'Attendance exists',
-  overwriteBody: (team: string) =>
-    `Attendance for ${team} was already recorded today. Replace it?`,
+  overwriteBody: (team: string, date: string) =>
+    `Attendance for ${team} was already recorded for ${date}. Replace it?`,
+  headerCreateAttendance: 'Record attendance',
+  createAttendanceModalTitle: 'Record attendance',
+  createAttendanceModalDescription: 'Choose the team, date, and time, then mark each player.',
+  colTime: 'Time',
+  startRecording: 'Continue',
+  toastInvalidDateTime: 'Invalid date or time',
   overwriteConfirm: 'Replace',
   cancel: 'Cancel',
   colDate: 'Date',
