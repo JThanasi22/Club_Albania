@@ -34,9 +34,11 @@ import {
   getWhatsAppHref,
 } from '@/lib/whatsappPaymentReminder';
 import { getPlayerPaymentSummary, type PaymentEntry } from '@/lib/playerPaymentSummary';
+import { isContractEnded } from '@/lib/contractEndDate';
 import { getDashboardLang } from '@/lang/dashboard';
 import { getTeamsLang } from '@/lang/teams';
 import { getAttendanceLang } from '@/lang/attendance';
+import { getPlayersLang } from '@/lang/players';
 import { AttendanceTab, type AttendanceFlowBootstrap } from '@/components/AttendanceTab';
 import { sessionDateFromDateAndTime } from '@/lib/attendance';
 import { PlayerPracticeAttendanceSection } from '@/components/PlayerPracticeAttendanceSection';
@@ -61,6 +63,7 @@ interface Player {
   photo: string | null;
   joinDate: string;
   dateOfBirth?: string | null;
+  contractEndDate?: string | null;
   active: boolean;
   totalPayment?: number;
   paymentHistory?: PaymentEntry[];
@@ -149,6 +152,7 @@ const DASHBOARD_CARD_MODAL_HINT_MIN_ITEMS = 6;
 const dl = getDashboardLang('sq');
 const teamsL = getTeamsLang('sq');
 const attendanceL = getAttendanceLang('sq');
+const pl = getPlayersLang('sq');
 
 // Format currency in ALL (Albanian Lek)
 const formatCurrency = (amount: number) => {
@@ -304,6 +308,7 @@ export default function VolleyballTeamManager() {
     jerseyNumber: '',
     joinDate: new Date().toISOString().split('T')[0],
     dateOfBirth: '',
+    contractEndDate: '',
     active: true,
     totalPayment: '',
   });
@@ -519,6 +524,54 @@ export default function VolleyballTeamManager() {
     void handleDownloadPlayerPaymentPdf(player);
   };
 
+  const handleDownloadPlayerFinalReportPdf = async (player: Player) => {
+    setOperationInProgress(true);
+    try {
+      const res = await fetch(`/api/players/${player.id}/final-report-pdf`, {
+        method: 'GET',
+        cache: 'no-store',
+        credentials: 'include',
+        headers: { Accept: 'application/pdf' },
+      });
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!res.ok) {
+        let msg: string = pl.finalReportPdfError;
+        if (contentType.includes('application/json')) {
+          const err = (await res.json().catch(() => ({}))) as { error?: string };
+          if (err.error) msg = err.error;
+        }
+        throw new Error(msg);
+      }
+      if (!contentType.includes('application/pdf') && !contentType.includes('application/octet-stream')) {
+        throw new Error(pl.finalReportPdfError);
+      }
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      const cd = res.headers.get('Content-Disposition');
+      const match = cd?.match(/filename="([^"]+)"/);
+      a.download = match?.[1] ?? `te-dhenat-perfundimtare-${player.name.replace(/\s+/g, '_')}.pdf`;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+      }, 30_000);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : pl.finalReportPdfError);
+    } finally {
+      setOperationInProgress(false);
+    }
+  };
+
+  const onPlayerFinalReportPdfClick = (player: Player) => (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void handleDownloadPlayerFinalReportPdf(player);
+  };
+
   const openWhatsappPaymentReminder = (player: Player) => {
     const digits = normalizePhoneForWhatsApp(player.phone);
     if (!digits) return;
@@ -559,6 +612,10 @@ export default function VolleyballTeamManager() {
 
   // Player CRUD operations
   const handleCreatePlayer = async () => {
+    if (!playerForm.contractEndDate.trim()) {
+      toast.error(pl.contractEndDateRequired);
+      return;
+    }
     setOperationInProgress(true);
     try {
       const totalPayment = playerForm.totalPayment ? parseFloat(String(playerForm.totalPayment)) : 0;
@@ -567,13 +624,16 @@ export default function VolleyballTeamManager() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...playerForm, photo: playerPhoto, totalPayment: Number.isNaN(totalPayment) ? 0 : totalPayment }),
       });
-      if (!res.ok) throw new Error('Failed to create player');
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || 'Failed to create player');
+      }
       toast.success('Lojtari u shtua me sukses');
       setPlayerDialogOpen(false);
       resetPlayerForm();
       refreshAllData();
-    } catch {
-      toast.error('Shtimi i lojtarit dështoi');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Shtimi i lojtarit dështoi');
     } finally {
       setOperationInProgress(false);
     }
@@ -581,6 +641,10 @@ export default function VolleyballTeamManager() {
 
   const handleUpdatePlayer = async () => {
     if (!editingPlayer) return;
+    if (!playerForm.contractEndDate.trim()) {
+      toast.error(pl.contractEndDateRequired);
+      return;
+    }
     setOperationInProgress(true);
     try {
       const totalPayment = playerForm.totalPayment ? parseFloat(String(playerForm.totalPayment)) : 0;
@@ -593,14 +657,17 @@ export default function VolleyballTeamManager() {
           totalPayment: Number.isNaN(totalPayment) ? 0 : totalPayment,
         }),
       });
-      if (!res.ok) throw new Error('Failed to update player');
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || 'Failed to update player');
+      }
       toast.success('Lojtari u përditësua me sukses');
       setPlayerDialogOpen(false);
       setEditingPlayer(null);
       resetPlayerForm();
       refreshAllData();
-    } catch {
-      toast.error('Përditësimi i lojtarit dështoi');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Përditësimi i lojtarit dështoi');
     } finally {
       setOperationInProgress(false);
     }
@@ -737,6 +804,7 @@ export default function VolleyballTeamManager() {
       jerseyNumber: '',
       joinDate: new Date().toISOString().split('T')[0],
       dateOfBirth: '',
+      contractEndDate: '',
       active: true,
       totalPayment: '',
     });
@@ -757,6 +825,9 @@ export default function VolleyballTeamManager() {
       joinDate: new Date(player.joinDate).toISOString().split('T')[0],
       dateOfBirth: player.dateOfBirth
         ? new Date(player.dateOfBirth).toISOString().split('T')[0]
+        : '',
+      contractEndDate: player.contractEndDate
+        ? new Date(player.contractEndDate).toISOString().split('T')[0]
         : '',
       active: player.active,
       totalPayment: (player.totalPayment ?? 0) > 0 ? String(player.totalPayment) : '',
@@ -2787,7 +2858,7 @@ export default function VolleyballTeamManager() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1.2fr_1.2fr_0.85fr]">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="joinDate">Data e Bashkimit</Label>
                 <Input
@@ -2804,6 +2875,16 @@ export default function VolleyballTeamManager() {
                   type="date"
                   value={playerForm.dateOfBirth}
                   onChange={(e) => setPlayerForm({ ...playerForm, dateOfBirth: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contractEndDate">{pl.contractEndDateLabel} *</Label>
+                <Input
+                  id="contractEndDate"
+                  type="date"
+                  required
+                  value={playerForm.contractEndDate}
+                  onChange={(e) => setPlayerForm({ ...playerForm, contractEndDate: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
@@ -2885,6 +2966,12 @@ export default function VolleyballTeamManager() {
                   </p>
                 </div>
                 <div>
+                  <Label className="text-gray-500">{pl.contractEndDateLabel}</Label>
+                  <p className="font-medium">
+                    {viewingPlayer.contractEndDate ? formatDateDisplay(viewingPlayer.contractEndDate) : '-'}
+                  </p>
+                </div>
+                <div>
                   <Label className="text-gray-500">Statusi</Label>
                   <Badge variant={viewingPlayer.active ? 'default' : 'secondary'}>
                     {viewingPlayer.active ? 'Aktiv' : 'Joaktiv'}
@@ -2940,6 +3027,18 @@ export default function VolleyballTeamManager() {
                       <FileDown className="w-4 h-4 mr-2" />
                       Shkarko PDF pagesash
                     </Button>
+                    {isContractEnded(viewingPlayer.contractEndDate) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="w-full mt-2"
+                        onClick={onPlayerFinalReportPdfClick(viewingPlayer)}
+                      >
+                        <FileDown className="w-4 h-4 mr-2" />
+                        {pl.finalReportButton}
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { parseContractEndDateInput } from '@/lib/contractEndDate';
 
 export async function GET(
   request: Request,
@@ -37,7 +38,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, email, phone, team, jerseyNumber, photo, joinDate, dateOfBirth, active, totalPayment, paymentHistory } = body;
+    const { name, email, phone, team, jerseyNumber, photo, joinDate, dateOfBirth, contractEndDate, active, totalPayment, paymentHistory } = body;
 
     const existing = await db.player.findUnique({ where: { id } });
     if (!existing) {
@@ -61,6 +62,13 @@ export async function PUT(
     if (dateOfBirth !== undefined) {
       updateData.dateOfBirth =
         dateOfBirth != null && String(dateOfBirth).trim() !== '' ? new Date(dateOfBirth) : null;
+    }
+    if (contractEndDate !== undefined) {
+      const contractEndParsed = parseContractEndDateInput(contractEndDate);
+      if (!contractEndParsed.ok) {
+        return NextResponse.json({ error: contractEndParsed.error }, { status: 400 });
+      }
+      updateData.contractEndDate = contractEndParsed.date;
     }
     if (totalPayment !== undefined) {
       const total = Number(totalPayment);

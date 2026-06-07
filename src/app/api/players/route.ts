@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { parseContractEndDateInput } from '@/lib/contractEndDate';
 
 // GET all players
 export async function GET() {
@@ -23,10 +24,15 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, email, phone, team, jerseyNumber, photo, joinDate, dateOfBirth, active, totalPayment } = body;
+    const { name, email, phone, team, jerseyNumber, photo, joinDate, dateOfBirth, contractEndDate, active, totalPayment } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Emri është i detyrueshëm' }, { status: 400 });
+    }
+
+    const contractEndParsed = parseContractEndDateInput(contractEndDate);
+    if (!contractEndParsed.ok) {
+      return NextResponse.json({ error: contractEndParsed.error }, { status: 400 });
     }
 
     const total = totalPayment != null ? Number(totalPayment) : 0;
@@ -41,6 +47,7 @@ export async function POST(request: Request) {
         joinDate: joinDate ? new Date(joinDate) : new Date(),
         dateOfBirth:
           dateOfBirth != null && String(dateOfBirth).trim() !== '' ? new Date(dateOfBirth) : null,
+        contractEndDate: contractEndParsed.date,
         active: active !== undefined ? active : true,
         totalPayment: Number.isNaN(total) ? 0 : Math.max(0, total),
         paymentHistory: [],
