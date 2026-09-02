@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const PROTECTED_PREFIXES = ['/api/players', '/api/payments', '/api/stats', '/api/upload', '/api/attendance'];
+const PROTECTED_PREFIXES = ['/api/players', '/api/payments', '/api/stats', '/api/upload', '/api/attendance', '/api/registrations'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (pathname === '/api/registrations/webhook') return NextResponse.next();
 
   const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
   if (!isProtected) return NextResponse.next();
@@ -24,5 +26,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/api/players/:path*', '/api/payments/:path*', '/api/stats/:path*', '/api/upload/:path*', '/api/attendance/:path*'],
+  matcher: ['/api/players/:path*', '/api/payments/:path*', '/api/stats/:path*', '/api/upload/:path*', '/api/attendance/:path*', '/api/registrations/:path*'],
 };

@@ -100,3 +100,22 @@ model PracticeAttendance {
   @@index([teamName])
   @@index([dateKey])
 }
+
+model Registration {
+  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  googleResponseId String    @unique
+  name             String
+  email            String?
+  phone            String?
+  dateOfBirth      DateTime?
+  photo            String?
+  preferredContact String
+  submittedAt      DateTime
+  playerId         String?   @db.ObjectId
+  convertedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([submittedAt])
+  @@index([playerId])
+}

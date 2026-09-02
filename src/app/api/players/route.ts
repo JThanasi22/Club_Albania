@@ -24,7 +24,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, email, phone, team, jerseyNumber, photo, joinDate, dateOfBirth, contractEndDate, active, totalPayment } = body;
+    const { name, email, phone, team, jerseyNumber, photo, joinDate, dateOfBirth, contractEndDate, active, totalPayment, registrationId } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Emri është i detyrueshëm' }, { status: 400 });
@@ -33,6 +33,21 @@ export async function POST(request: Request) {
     const contractEndParsed = parseContractEndDateInput(contractEndDate);
     if (!contractEndParsed.ok) {
       return NextResponse.json({ error: contractEndParsed.error }, { status: 400 });
+    }
+
+    const linkedRegistrationId =
+      typeof registrationId === 'string' && registrationId.trim() ? registrationId.trim() : '';
+    if (linkedRegistrationId) {
+      const registration = await db.registration.findUnique({
+        where: { id: linkedRegistrationId },
+        select: { id: true, playerId: true, convertedAt: true },
+      });
+      if (!registration) {
+        return NextResponse.json({ error: 'Regjistrimi nuk u gjet' }, { status: 404 });
+      }
+      if (registration.playerId || registration.convertedAt) {
+        return NextResponse.json({ error: 'Ky regjistrim është tashmë lojtar' }, { status: 409 });
+      }
     }
 
     const total = totalPayment != null ? Number(totalPayment) : 0;
@@ -53,6 +68,13 @@ export async function POST(request: Request) {
         paymentHistory: [],
       },
     });
+
+    if (linkedRegistrationId) {
+      await db.registration.update({
+        where: { id: linkedRegistrationId },
+        data: { playerId: player.id, convertedAt: new Date() },
+      });
+    }
 
     return NextResponse.json(player, { status: 201 });
   } catch (error) {

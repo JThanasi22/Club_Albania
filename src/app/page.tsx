@@ -21,7 +21,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Users, TrendingUp, Calendar, Plus, Pencil, Trash2,
   CheckCircle, UserPlus, CreditCard, Search, Wallet,
-  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, FileDown, MessageCircle, LayoutGrid, Image as ImageIcon, ChevronLeft, ChevronRight, ClipboardCheck
+  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, FileDown, MessageCircle, LayoutGrid, Image as ImageIcon, ChevronLeft, ChevronRight, ClipboardCheck, ListFilter, ClipboardList
 } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { sq as dateFnsSq } from 'date-fns/locale/sq';
@@ -34,12 +34,15 @@ import {
   getWhatsAppHref,
 } from '@/lib/whatsappPaymentReminder';
 import { getPlayerPaymentSummary, type PaymentEntry } from '@/lib/playerPaymentSummary';
-import { isContractEnded } from '@/lib/contractEndDate';
+import { dateKeyFromValue, isContractEnded } from '@/lib/contractEndDate';
 import { getDashboardLang } from '@/lang/dashboard';
 import { getTeamsLang } from '@/lang/teams';
 import { getAttendanceLang } from '@/lang/attendance';
 import { getPlayersLang } from '@/lang/players';
+import { getRegistrationsLang } from '@/lang/registrations';
 import { AttendanceTab, type AttendanceFlowBootstrap } from '@/components/AttendanceTab';
+import { RegistrationsTab } from '@/components/RegistrationsTab';
+import { dateInputFromValue, type Registration } from '@/lib/registrations';
 import { sessionDateFromDateAndTime } from '@/lib/attendance';
 import { PlayerPracticeAttendanceSection } from '@/components/PlayerPracticeAttendanceSection';
 import type { PlayerAttendanceSummaryMap } from '@/lib/playerAttendanceSummary';
@@ -153,6 +156,7 @@ const dl = getDashboardLang('sq');
 const teamsL = getTeamsLang('sq');
 const attendanceL = getAttendanceLang('sq');
 const pl = getPlayersLang('sq');
+const regL = getRegistrationsLang('sq');
 
 // Format currency in ALL (Albanian Lek)
 const formatCurrency = (amount: number) => {
@@ -226,6 +230,10 @@ export default function VolleyballTeamManager() {
   const [playerSearch, setPlayerSearch] = useState('');
   const [playerPaymentFilter, setPlayerPaymentFilter] = useState('all');
   const [playerPaymentSort, setPlayerPaymentSort] = useState('none');
+  const [playerStatusFilter, setPlayerStatusFilter] = useState('all');
+  const [playerContractYearFilter, setPlayerContractYearFilter] = useState('all');
+  const [creatingFromRegistration, setCreatingFromRegistration] = useState<Registration | null>(null);
+  const [registrationsRefreshToken, setRegistrationsRefreshToken] = useState(0);
   const [dashboardListModal, setDashboardListModal] = useState<null | 'recentPayments' | 'unpaid'>(null);
   const [dashboardListSearch, setDashboardListSearch] = useState('');
   const [playerRowSpotlightId, setPlayerRowSpotlightId] = useState<string | null>(null);
@@ -622,14 +630,20 @@ export default function VolleyballTeamManager() {
       const res = await fetch('/api/players', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...playerForm, photo: playerPhoto, totalPayment: Number.isNaN(totalPayment) ? 0 : totalPayment }),
+        body: JSON.stringify({
+          ...playerForm,
+          photo: playerPhoto,
+          totalPayment: Number.isNaN(totalPayment) ? 0 : totalPayment,
+          registrationId: creatingFromRegistration?.id,
+        }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error || 'Failed to create player');
       }
-      toast.success('Lojtari u shtua me sukses');
+      toast.success(creatingFromRegistration ? regL.toastCreated : 'Lojtari u shtua me sukses');
       setPlayerDialogOpen(false);
+      if (creatingFromRegistration) setRegistrationsRefreshToken((n) => n + 1);
       resetPlayerForm();
       refreshAllData();
     } catch (e) {
@@ -809,9 +823,29 @@ export default function VolleyballTeamManager() {
       totalPayment: '',
     });
     setPlayerPhoto(null);
+    setCreatingFromRegistration(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const openCreateFromRegistration = (registration: Registration) => {
+    setEditingPlayer(null);
+    setCreatingFromRegistration(registration);
+    setPlayerForm({
+      name: registration.name,
+      email: registration.email || '',
+      phone: registration.phone || '',
+      team: '',
+      jerseyNumber: '',
+      joinDate: new Date().toISOString().split('T')[0],
+      dateOfBirth: dateInputFromValue(registration.dateOfBirth),
+      contractEndDate: '',
+      active: true,
+      totalPayment: '',
+    });
+    setPlayerPhoto(registration.photo);
+    setPlayerDialogOpen(true);
   };
 
   const openEditPlayer = (player: Player) => {
@@ -833,10 +867,32 @@ export default function VolleyballTeamManager() {
       totalPayment: (player.totalPayment ?? 0) > 0 ? String(player.totalPayment) : '',
     });
     setPlayerPhoto(player.photo);
+    setCreatingFromRegistration(null);
     setPlayerDialogOpen(true);
   };
 
-  // Filter players
+  const playerContractYears = useMemo(() => {
+    const years = new Set<string>();
+    for (const p of players || []) {
+      const year = dateKeyFromValue(p.contractEndDate).slice(0, 4);
+      if (/^\d{4}$/.test(year)) years.add(year);
+    }
+    return Array.from(years).sort((a, b) => Number(b) - Number(a));
+  }, [players]);
+
+  const playerFilterActiveCount =
+    (playerPaymentFilter !== 'all' ? 1 : 0) +
+    (playerPaymentSort !== 'none' ? 1 : 0) +
+    (playerStatusFilter !== 'all' ? 1 : 0) +
+    (playerContractYearFilter !== 'all' ? 1 : 0);
+
+  const clearPlayerFilters = () => {
+    setPlayerPaymentFilter('all');
+    setPlayerPaymentSort('none');
+    setPlayerStatusFilter('all');
+    setPlayerContractYearFilter('all');
+  };
+
   const filteredPlayers = (players || []).filter((player) => {
     const searchTerm = playerSearch.toLowerCase();
     const matchesSearch =
@@ -852,7 +908,16 @@ export default function VolleyballTeamManager() {
       (playerPaymentFilter === 'paid' && amountLeft === 0) ||
       (playerPaymentFilter === 'credit' && amountLeft < 0);
 
-    return matchesSearch && matchesPaymentFilter;
+    const matchesStatusFilter =
+      playerStatusFilter === 'all' ||
+      (playerStatusFilter === 'active' && player.active) ||
+      (playerStatusFilter === 'inactive' && !player.active);
+
+    const contractYear = dateKeyFromValue(player.contractEndDate).slice(0, 4);
+    const matchesYearFilter =
+      playerContractYearFilter === 'all' || contractYear === playerContractYearFilter;
+
+    return matchesSearch && matchesPaymentFilter && matchesStatusFilter && matchesYearFilter;
   });
 
   const sortedPlayers = [...filteredPlayers].sort((a, b) => {
@@ -871,11 +936,17 @@ export default function VolleyballTeamManager() {
 
   const goToPlayersRowFromUnpaid = (player: Player) => {
     const { amountLeft } = getPlayerPaymentSummary(player);
-    const wouldHide =
+    const wouldHidePayment =
       (playerPaymentFilter === 'paid' && amountLeft !== 0) ||
       (playerPaymentFilter === 'credit' && amountLeft >= 0) ||
       (playerPaymentFilter === 'withBalance' && amountLeft <= 0);
-    if (wouldHide) setPlayerPaymentFilter('all');
+    if (wouldHidePayment) setPlayerPaymentFilter('all');
+    if (playerStatusFilter === 'active' && !player.active) setPlayerStatusFilter('all');
+    if (playerStatusFilter === 'inactive' && player.active) setPlayerStatusFilter('all');
+    const year = dateKeyFromValue(player.contractEndDate).slice(0, 4);
+    if (playerContractYearFilter !== 'all' && year !== playerContractYearFilter) {
+      setPlayerContractYearFilter('all');
+    }
     setPlayerSearch('');
     setDashboardListModal(null);
     setDashboardListSearch('');
@@ -915,7 +986,7 @@ export default function VolleyballTeamManager() {
       window.history.replaceState(null, '', `#player-row-${id}`);
     }, 50);
     return () => window.clearTimeout(t);
-  }, [activeTab, playerRowSpotlightId, sortedPlayerIdsKey, playerSearch, playerPaymentFilter]);
+  }, [activeTab, playerRowSpotlightId, sortedPlayerIdsKey, playerSearch, playerPaymentFilter, playerStatusFilter, playerContractYearFilter]);
 
   const openDashboardListModal = (kind: 'recentPayments' | 'unpaid') => {
     setDashboardListSearch('');
@@ -1399,7 +1470,7 @@ export default function VolleyballTeamManager() {
       {/* Main Content */}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1 w-full overflow-hidden">
-          <TabsList className="grid w-full grid-cols-4 mb-4 sm:mb-6 h-auto gap-1">
+          <TabsList className="grid w-full grid-cols-5 mb-4 sm:mb-6 h-auto gap-1">
             <TabsTrigger value="dashboard" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
               <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="text-xs sm:text-sm">Përgjithësi</span>
@@ -1407,6 +1478,10 @@ export default function VolleyballTeamManager() {
             <TabsTrigger value="players" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
               <Users className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="text-xs sm:text-sm">Lojtarët</span>
+            </TabsTrigger>
+            <TabsTrigger value="registrations" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
+              <ClipboardList className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="text-xs sm:text-sm">{regL.tabShort}</span>
             </TabsTrigger>
             <TabsTrigger value="teams" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2">
               <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -1766,27 +1841,93 @@ export default function VolleyballTeamManager() {
                         className="pl-10 w-full sm:w-64"
                       />
                     </div>
-                    <Select value={playerPaymentFilter} onValueChange={setPlayerPaymentFilter}>
-                      <SelectTrigger className="w-full sm:w-[220px]">
-                        <SelectValue placeholder="Filtro sipas pagesës" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Të gjithë</SelectItem>
-                        <SelectItem value="withBalance">Kanë shumë për të paguar</SelectItem>
-                        <SelectItem value="paid">Të paguar plotësisht</SelectItem>
-                        <SelectItem value="credit">Me tepricë</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select value={playerPaymentSort} onValueChange={setPlayerPaymentSort}>
-                      <SelectTrigger className="w-full sm:w-[220px]">
-                        <SelectValue placeholder="Rendit sipas shumës së mbetur" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Pa renditje</SelectItem>
-                        <SelectItem value="highestBalance">Shuma e mbetur: nga më e madhja</SelectItem>
-                        <SelectItem value="lowestBalance">Shuma e mbetur: nga më e vogla</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full sm:w-auto">
+                          <ListFilter className="w-4 h-4 mr-2" />
+                          {pl.filterButton}
+                          {playerFilterActiveCount > 0 ? (
+                            <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-medium text-primary-foreground">
+                              {playerFilterActiveCount}
+                            </span>
+                          ) : null}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-80"
+                        align="end"
+                        onOpenAutoFocus={(e) => e.preventDefault()}
+                        onCloseAutoFocus={(e) => e.preventDefault()}
+                        onInteractOutside={(e) => {
+                          const target = e.target as HTMLElement;
+                          if (target.closest('[data-slot="select-content"]')) e.preventDefault();
+                        }}
+                      >
+                        <div className="space-y-3">
+                          <div className="space-y-1.5">
+                            <Label htmlFor="player-filter-status">{pl.filterStatus}</Label>
+                            <Select value={playerStatusFilter} onValueChange={setPlayerStatusFilter}>
+                              <SelectTrigger id="player-filter-status" className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="z-[60]">
+                                <SelectItem value="all">{pl.filterStatusAll}</SelectItem>
+                                <SelectItem value="active">{pl.filterStatusActive}</SelectItem>
+                                <SelectItem value="inactive">{pl.filterStatusInactive}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="player-filter-year">{pl.filterYear}</Label>
+                            <Select value={playerContractYearFilter} onValueChange={setPlayerContractYearFilter}>
+                              <SelectTrigger id="player-filter-year" className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="z-[60]">
+                                <SelectItem value="all">{pl.filterYearAll}</SelectItem>
+                                {playerContractYears.map((year) => (
+                                  <SelectItem key={year} value={year}>
+                                    {year}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="player-filter-payment">{pl.filterPayment}</Label>
+                            <Select value={playerPaymentFilter} onValueChange={setPlayerPaymentFilter}>
+                              <SelectTrigger id="player-filter-payment" className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="z-[60]">
+                                <SelectItem value="all">{pl.filterPaymentAll}</SelectItem>
+                                <SelectItem value="withBalance">{pl.filterPaymentWithBalance}</SelectItem>
+                                <SelectItem value="paid">{pl.filterPaymentPaid}</SelectItem>
+                                <SelectItem value="credit">{pl.filterPaymentCredit}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="player-filter-sort">{pl.filterSort}</Label>
+                            <Select value={playerPaymentSort} onValueChange={setPlayerPaymentSort}>
+                              <SelectTrigger id="player-filter-sort" className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="z-[60]">
+                                <SelectItem value="none">{pl.filterSortNone}</SelectItem>
+                                <SelectItem value="highestBalance">{pl.filterSortHighest}</SelectItem>
+                                <SelectItem value="lowestBalance">{pl.filterSortLowest}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {playerFilterActiveCount > 0 ? (
+                            <Button variant="ghost" size="sm" className="w-full" onClick={clearPlayerFilters}>
+                              {pl.filterClear}
+                            </Button>
+                          ) : null}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                     <Button
                       variant="outline"
                       className="w-full sm:w-auto border-green-600/50 text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-950/40 disabled:opacity-40"
@@ -2062,6 +2203,14 @@ export default function VolleyballTeamManager() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="registrations" className="flex flex-col flex-1 min-h-0 gap-6 overflow-y-auto outline-none">
+            <RegistrationsTab
+              active={activeTab === 'registrations'}
+              refreshToken={registrationsRefreshToken}
+              onCreateFromRegistration={openCreateFromRegistration}
+            />
           </TabsContent>
 
           <TabsContent value="teams" className="flex flex-col flex-1 min-h-0 gap-6 overflow-y-auto outline-none">
@@ -2731,12 +2880,33 @@ export default function VolleyballTeamManager() {
       <Dialog open={playerDialogOpen} onOpenChange={setPlayerDialogOpen}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingPlayer ? 'Përditëso Lojtarin' : 'Shto Lojtar të Ri'}</DialogTitle>
+            <DialogTitle>
+              {editingPlayer ? 'Përditëso Lojtarin' : creatingFromRegistration ? regL.createFromTitle : 'Shto Lojtar të Ri'}
+            </DialogTitle>
             <DialogDescription>
-              {editingPlayer ? 'Përditësoni informacionin e lojtarit' : 'Vendosni të dhënat për anëtarin e ri të ekipit'}
+              {editingPlayer
+                ? 'Përditësoni informacionin e lojtarit'
+                : creatingFromRegistration
+                  ? regL.createFromDescription
+                  : 'Vendosni të dhënat për anëtarin e ri të ekipit'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {creatingFromRegistration ? (
+              <div className="space-y-2 rounded-md border border-border/60 bg-muted/40 p-3">
+                <p className="text-sm text-muted-foreground">{regL.remainingHint}</p>
+                <div>
+                  <Label className="text-gray-500">{regL.preferredContact}</Label>
+                  <p className="font-medium">
+                    {creatingFromRegistration.preferredContact === 'whatsapp'
+                      ? regL.contactWhatsapp
+                      : creatingFromRegistration.preferredContact === 'email'
+                        ? regL.contactEmail
+                        : regL.contactPhone}
+                  </p>
+                </div>
+              </div>
+            ) : null}
             {/* Photo Upload */}
             <div className="space-y-2">
               <Label>Fotoja e Lojtarit</Label>
