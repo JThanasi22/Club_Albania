@@ -27,6 +27,11 @@ const sq = {
   remainingHint: 'Të detyrueshme nga ju: data e mbarimit. Ekipi, numri i fanellës dhe pagesa janë opsionale.',
   toastCreated: 'Lojtari u shtua nga regjistrimi',
   loading: 'Duke ngarkuar…',
+  deleteButton: 'Fshi',
+  deleteTitle: 'Fshi regjistrimin',
+  deleteDescription: (name: string) => `Regjistrimi i ${name} do të hiqet nga lista. Lojtari i krijuar nuk fshihet.`,
+  toastDeleted: 'Regjistrimi u fshi',
+  toastDeleteError: 'Fshirja e regjistrimit dështoi',
 } as const;
 
 const en = {
@@ -58,6 +63,11 @@ const en = {
   remainingHint: 'Required from you: contract end date. Team, jersey number, and payment are optional.',
   toastCreated: 'Player created from registration',
   loading: 'Loading…',
+  deleteButton: 'Delete',
+  deleteTitle: 'Delete registration',
+  deleteDescription: (name: string) => `${name} will be removed from this list. An already created player is not deleted.`,
+  toastDeleted: 'Registration deleted',
+  toastDeleteError: 'Failed to delete registration',
 } as const;
 
 export const registrationsLocales = { sq, en } as const;

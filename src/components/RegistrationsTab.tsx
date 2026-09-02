@@ -6,8 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ClipboardList, Search, UserPlus, Users } from 'lucide-react';
+import { ClipboardList, Search, Trash2, UserPlus, Users } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getRegistrationsLang } from '@/lang/registrations';
 import type { Registration } from '@/lib/registrations';
 
@@ -49,6 +51,23 @@ export function RegistrationsTab({ active, refreshToken, onCreateFromRegistratio
   const [rows, setRows] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Registration | null>(null);
+
+  const removeRow = async () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    try {
+      const res = await fetch(`/api/registrations/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || L.toastDeleteError);
+      }
+      setRows((prev) => prev.filter((r) => r.id !== id));
+      toast.success(L.toastDeleted);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : L.toastDeleteError);
+    }
+  };
 
   useEffect(() => {
     if (!active) return;
@@ -146,9 +165,9 @@ export function RegistrationsTab({ active, refreshToken, onCreateFromRegistratio
                         </div>
                       </div>
                     </div>
-                    <div className="flex justify-end mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                    <div className="flex justify-end gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
                       {converted ? (
-                        <span className="text-sm text-muted-foreground inline-flex items-center gap-1">
+                        <span className="text-sm text-muted-foreground inline-flex items-center gap-1 mr-auto">
                           <Users className="w-4 h-4" />
                           {L.alreadyPlayer}
                         </span>
@@ -158,6 +177,9 @@ export function RegistrationsTab({ active, refreshToken, onCreateFromRegistratio
                           {L.addAsPlayer}
                         </Button>
                       )}
+                      <Button size="sm" variant="outline" onClick={() => setDeleteTarget(row)} title={L.deleteButton}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
                 );
@@ -196,14 +218,19 @@ export function RegistrationsTab({ active, refreshToken, onCreateFromRegistratio
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          {converted ? (
-                            <span className="text-sm text-muted-foreground">{L.alreadyPlayer}</span>
-                          ) : (
-                            <Button size="sm" onClick={() => onCreateFromRegistration(row)}>
-                              <UserPlus className="w-4 h-4 mr-2" />
-                              {L.addAsPlayer}
+                          <div className="flex items-center justify-end gap-2">
+                            {converted ? (
+                              <span className="text-sm text-muted-foreground">{L.alreadyPlayer}</span>
+                            ) : (
+                              <Button size="sm" onClick={() => onCreateFromRegistration(row)}>
+                                <UserPlus className="w-4 h-4 mr-2" />
+                                {L.addAsPlayer}
+                              </Button>
+                            )}
+                            <Button size="sm" variant="outline" onClick={() => setDeleteTarget(row)} title={L.deleteButton}>
+                              <Trash2 className="w-4 h-4" />
                             </Button>
-                          )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -214,6 +241,19 @@ export function RegistrationsTab({ active, refreshToken, onCreateFromRegistratio
           </>
         )}
       </CardContent>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title={L.deleteTitle}
+        description={deleteTarget ? L.deleteDescription(deleteTarget.name) : ''}
+        confirmText={L.deleteButton}
+        onConfirm={() => {
+          void removeRow();
+        }}
+        variant="destructive"
+      />
     </Card>
   );
 }
