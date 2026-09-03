@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { GoogleGenerativeAIFetchError } from '@google/generative-ai';
 import { getAdminSessionFromCookies } from '@/lib/adminSessionCookie';
 import { runAdminAssistantGemini, type AdminChatClientMessage } from '@/lib/adminAssistantGemini';
+import { getSeasonRangeFromCookies } from '@/lib/seasonCookie';
 import type { Content } from '@google/generative-ai';
 
 const bodySchema = z.object({
@@ -64,11 +65,13 @@ export async function POST(request: Request) {
     const modelName = (process.env.GEMINI_MODEL ?? '').trim() || 'gemini-2.5-flash';
     const historyContents = toGeminiHistory(messages);
 
+    const season = await getSeasonRangeFromCookies();
     const { reply, artifacts } = await runAdminAssistantGemini({
       apiKey,
       modelName,
       historyContents,
       lastUserText: last.content,
+      season,
     });
 
     return NextResponse.json({ reply, artifacts });

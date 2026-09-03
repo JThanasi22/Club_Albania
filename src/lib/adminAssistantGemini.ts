@@ -6,6 +6,7 @@ import {
   type Part,
 } from '@google/generative-ai';
 import type { AdminChatArtifact } from '@/lib/adminAssistantArtifacts';
+import type { SeasonRange } from '@/lib/season';
 import { executeAdminAssistantTool, getAdminAssistantToolDeclarations } from '@/lib/adminAssistantTools';
 
 export type AdminChatClientMessage = { role: 'user' | 'assistant'; content: string };
@@ -24,6 +25,7 @@ const SYSTEM_INSTRUCTION = [
   'Understand user messages in Albanian or English (and mixed input).',
   'Always write your entire reply to the user in standard Albanian (shqip), including explanations, lists, and headings—even if the user wrote in English.',
   'Use Albanian club terms where natural: lojtar, pagesë, faturë, arkëtim, bilanc, kontratë, ekip.',
+  'All numbers, lists, invoices, and exports are scoped to the currently selected club season (1 September – 30 June).',
   'You MUST call the provided tools whenever the user asks for numbers, lists, balances, invoices, exports, PDFs, or CSV/Excel data. Never invent figures.',
   'Use get_dashboard_stats for club-wide overview.',
   'Use list_players to search or list players with balances.',
@@ -69,8 +71,9 @@ async function runAdminAssistantSingleModel(params: {
   modelName: string;
   historyContents: Content[];
   lastUserText: string;
+  season: SeasonRange;
 }): Promise<{ reply: string; artifacts: AdminChatArtifact[] }> {
-  const ctx = { artifacts: [] as AdminChatArtifact[] };
+  const ctx = { artifacts: [] as AdminChatArtifact[], season: params.season };
   const genAI = new GoogleGenerativeAI(params.apiKey);
   const model = genAI.getGenerativeModel({
     model: params.modelName,
@@ -126,6 +129,7 @@ export async function runAdminAssistantGemini(params: {
   modelName: string;
   historyContents: Content[];
   lastUserText: string;
+  season: SeasonRange;
 }): Promise<{ reply: string; artifacts: AdminChatArtifact[] }> {
   const candidates = orderedModels(params.modelName);
   let lastError: unknown;
@@ -136,6 +140,7 @@ export async function runAdminAssistantGemini(params: {
         modelName,
         historyContents: params.historyContents,
         lastUserText: params.lastUserText,
+        season: params.season,
       });
     } catch (e) {
       lastError = e;

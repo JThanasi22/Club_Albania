@@ -93,6 +93,8 @@ type AttendanceTabProps = {
   setOperationInProgress: (v: boolean) => void;
   flowBootstrap: AttendanceFlowBootstrap | null;
   onFlowBootstrapConsumed: () => void;
+  seasonId: string;
+  defaultDateKey: string;
 };
 
 const L = getAttendanceLang('sq');
@@ -216,13 +218,15 @@ export function AttendanceTab({
   setOperationInProgress,
   flowBootstrap,
   onFlowBootstrapConsumed,
+  seasonId,
+  defaultDateKey,
 }: AttendanceTabProps) {
   const isMobile = useIsMobile();
   const reduceMotion = useReducedMotion();
   const todayKey = useMemo(() => getAttendanceDateKey(), []);
-  const [flowDateKey, setFlowDateKey] = useState(todayKey);
+  const [flowDateKey, setFlowDateKey] = useState(defaultDateKey);
   const [flowSessionAt, setFlowSessionAt] = useState(() =>
-    sessionDateFromDateKey(todayKey).toISOString(),
+    sessionDateFromDateKey(defaultDateKey).toISOString(),
   );
   const flowDateDisplay = formatAttendanceDisplayDate(flowDateKey);
 
@@ -276,11 +280,16 @@ export function AttendanceTab({
     } finally {
       setSessionsLoading(false);
     }
-  }, []);
+  }, [seasonId]);
 
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
+
+  useEffect(() => {
+    setFlowDateKey(defaultDateKey);
+    setFlowSessionAt(sessionDateFromDateKey(defaultDateKey).toISOString());
+  }, [defaultDateKey]);
 
   const filteredSessions = useMemo(() => {
     const q = sessionSearch.trim().toLowerCase();
@@ -336,7 +345,7 @@ export function AttendanceTab({
   };
 
   const startFlow = () => {
-    const dateKey = getAttendanceDateKey();
+    const dateKey = defaultDateKey;
     beginFlowForDate(dateKey, sessionDateFromDateKey(dateKey).toISOString());
     setMobileStep('teams');
   };

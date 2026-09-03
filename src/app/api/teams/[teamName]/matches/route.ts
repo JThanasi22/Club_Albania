@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
+import { seasonUtcBounds } from '@/lib/season';
+import { getSeasonRangeFromCookies } from '@/lib/seasonCookie';
 
 const setPointSchema = z.object({
   our: z.number().int().min(0).max(200),
@@ -33,8 +35,10 @@ export async function GET(
   try {
     const { teamName: raw } = await params;
     const teamName = decodeTeamName(raw);
+    const season = await getSeasonRangeFromCookies();
+    const bounds = seasonUtcBounds(season);
     const matches = await db.teamMatch.findMany({
-      where: { teamName },
+      where: { teamName, matchDate: { gte: bounds.gte, lt: bounds.lt } },
       orderBy: { matchDate: 'desc' },
     });
     return NextResponse.json(matches);

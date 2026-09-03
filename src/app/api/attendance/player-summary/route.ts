@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { buildPlayerAttendanceSummaryMap } from '@/lib/playerAttendanceSummary';
+import { getSeasonRangeFromCookies } from '@/lib/seasonCookie';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    const season = await getSeasonRangeFromCookies();
     const sessions = await db.practiceAttendance.findMany({
+      where: {
+        dateKey: { gte: season.startKey, lte: season.endKey },
+      },
       select: {
         id: true,
         teamName: true,

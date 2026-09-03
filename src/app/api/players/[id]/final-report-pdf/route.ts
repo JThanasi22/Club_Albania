@@ -4,6 +4,8 @@ import { isContractEnded } from '@/lib/contractEndDate';
 import { buildPlayerAttendanceSummaryMap } from '@/lib/playerAttendanceSummary';
 import { buildPlayerFinalReportPdfBytes } from '@/lib/playerFinalReportPdf';
 import { slugifyForFilename } from '@/lib/playerPaymentPdf';
+import { filterPaymentHistoryBySeason } from '@/lib/season';
+import { getSeasonRangeFromCookies } from '@/lib/seasonCookie';
 
 type PaymentEntry = { amount: number; date: string };
 
@@ -32,7 +34,11 @@ export async function GET(
       );
     }
 
+    const season = await getSeasonRangeFromCookies();
     const sessions = await db.practiceAttendance.findMany({
+      where: {
+        dateKey: { gte: season.startKey, lte: season.endKey },
+      },
       select: {
         id: true,
         teamName: true,
@@ -59,7 +65,10 @@ export async function GET(
       active: player.active,
       photo: player.photo,
       totalPayment: player.totalPayment,
-      paymentHistory: (player.paymentHistory as PaymentEntry[] | null) ?? [],
+      paymentHistory: filterPaymentHistoryBySeason(
+        (player.paymentHistory as PaymentEntry[] | null) ?? [],
+        season,
+      ),
       attendance,
     });
 

@@ -34,16 +34,25 @@ import {
   getWhatsAppHref,
 } from '@/lib/whatsappPaymentReminder';
 import { getPlayerPaymentSummary, type PaymentEntry } from '@/lib/playerPaymentSummary';
-import { dateKeyFromValue, isContractEnded } from '@/lib/contractEndDate';
+import { isContractEnded } from '@/lib/contractEndDate';
+import {
+  defaultDateKeyInSeason,
+  filterPaymentHistoryBySeason,
+  formatSeasonLabel,
+  getDefaultSeasonId,
+  isDateKeyInSeason,
+  parseSeasonId,
+} from '@/lib/season';
 import { getDashboardLang } from '@/lang/dashboard';
 import { getTeamsLang } from '@/lang/teams';
 import { getAttendanceLang } from '@/lang/attendance';
 import { getPlayersLang } from '@/lang/players';
+import { getSeasonLang } from '@/lang/season';
 import { getRegistrationsLang } from '@/lang/registrations';
 import { AttendanceTab, type AttendanceFlowBootstrap } from '@/components/AttendanceTab';
 import { RegistrationsTab } from '@/components/RegistrationsTab';
 import { dateInputFromValue, type Registration } from '@/lib/registrations';
-import { sessionDateFromDateAndTime } from '@/lib/attendance';
+import { getAttendanceDateKey, sessionDateFromDateAndTime } from '@/lib/attendance';
 import { PlayerPracticeAttendanceSection } from '@/components/PlayerPracticeAttendanceSection';
 import type { PlayerAttendanceSummaryMap } from '@/lib/playerAttendanceSummary';
 import { parseFormationSlots, type FormationSlot } from '@/lib/teamFormation';
@@ -156,6 +165,7 @@ const dl = getDashboardLang('sq');
 const teamsL = getTeamsLang('sq');
 const attendanceL = getAttendanceLang('sq');
 const pl = getPlayersLang('sq');
+const seasonL = getSeasonLang('sq');
 const regL = getRegistrationsLang('sq');
 
 // Format currency in ALL (Albanian Lek)
@@ -214,6 +224,10 @@ function defaultPaymentDeadlineIsoYyyyMmDd(): string {
 export default function VolleyballTeamManager() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [admin, setAdmin] = useState<AdminUser | null>(null);
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  const [seasonDraft, setSeasonDraft] = useState(getDefaultSeasonId);
+  const [seasonSaving, setSeasonSaving] = useState(false);
+  const [seasonOptions, setSeasonOptions] = useState<{ id: string; label: string }[]>([]);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginLoading, setLoginLoading] = useState(false);
   const [operationInProgress, setOperationInProgress] = useState(false);
@@ -231,7 +245,6 @@ export default function VolleyballTeamManager() {
   const [playerPaymentFilter, setPlayerPaymentFilter] = useState('all');
   const [playerPaymentSort, setPlayerPaymentSort] = useState('none');
   const [playerStatusFilter, setPlayerStatusFilter] = useState('all');
-  const [playerContractYearFilter, setPlayerContractYearFilter] = useState('all');
   const [creatingFromRegistration, setCreatingFromRegistration] = useState<Registration | null>(null);
   const [registrationsRefreshToken, setRegistrationsRefreshToken] = useState(0);
   const [dashboardListModal, setDashboardListModal] = useState<null | 'recentPayments' | 'unpaid'>(null);
@@ -321,10 +334,60 @@ export default function VolleyballTeamManager() {
     totalPayment: '',
   });
 
+  const seasonRange = useMemo(() => (selectedSeasonId ? parseSeasonId(selectedSeasonId) : null), [selectedSeasonId]);
+  const seasonDateKey = seasonRange ? defaultDateKeyInSeason(seasonRange) : getAttendanceDateKey();
+
+  const paymentSummary = useCallback(
+    (player: Player) =>
+      getPlayerPaymentSummary({
+        totalPayment: player.totalPayment,
+        paymentHistory: seasonRange
+          ? filterPaymentHistoryBySeason(player.paymentHistory, seasonRange)
+          : (player.paymentHistory ?? []),
+      }),
+    [seasonRange],
+  );
+
   // Check authentication on mount
   useEffect(() => {
     checkAuth();
   }, []);
+
+  const loadSeasonCatalog = async (): Promise<{
+    cookieId: string | null;
+    defaultId: string;
+    options: { id: string; label: string }[];
+  }> => {
+    const fallbackId = getDefaultSeasonId();
+    try {
+      const res = await fetch('/api/auth/season');
+      const data = (await res.json()) as {
+        seasonId?: string | null;
+        defaultSeasonId?: string;
+        options?: { id: string; label: string }[];
+      };
+      if (!res.ok) throw new Error('season');
+      const options = Array.isArray(data.options)
+        ? data.options.filter((o) => parseSeasonId(o.id))
+        : [];
+      const defaultId = parseSeasonId(data.defaultSeasonId)?.id ?? fallbackId;
+      if (!options.some((o) => o.id === defaultId)) {
+        const parsed = parseSeasonId(defaultId);
+        if (parsed) options.unshift({ id: parsed.id, label: formatSeasonLabel(parsed.id) });
+      }
+      const cookieId = parseSeasonId(data.seasonId)?.id ?? null;
+      const cookieOk = cookieId != null && options.some((o) => o.id === cookieId);
+      setSeasonOptions(options);
+      setSeasonDraft(cookieOk ? cookieId : defaultId);
+      return { cookieId: cookieOk ? cookieId : null, defaultId, options };
+    } catch {
+      const parsed = parseSeasonId(fallbackId);
+      const options = parsed ? [{ id: parsed.id, label: formatSeasonLabel(parsed.id) }] : [];
+      setSeasonOptions(options);
+      setSeasonDraft(fallbackId);
+      return { cookieId: null, defaultId: fallbackId, options };
+    }
+  };
 
   const checkAuth = async () => {
     try {
@@ -333,9 +396,17 @@ export default function VolleyballTeamManager() {
       setAuthenticated(data.authenticated);
       if (data.authenticated && data.admin) {
         setAdmin(data.admin);
+        const catalog = await loadSeasonCatalog();
+        setSelectedSeasonId(catalog.cookieId);
+        if (!catalog.cookieId) setLoading(false);
+      } else {
+        setSelectedSeasonId(null);
+        setLoading(false);
       }
     } catch {
       setAuthenticated(false);
+      setSelectedSeasonId(null);
+      setLoading(false);
     }
   };
 
@@ -354,6 +425,9 @@ export default function VolleyballTeamManager() {
       if (data.success) {
         setAuthenticated(true);
         setAdmin(data.admin);
+        setSelectedSeasonId(null);
+        await loadSeasonCatalog();
+        setLoading(false);
         toast.success('Hyrja u krye me sukses!');
       } else {
         toast.error(data.error || 'Hyrja dështoi');
@@ -371,9 +445,40 @@ export default function VolleyballTeamManager() {
       await fetch('/api/auth/logout', { method: 'POST' });
       setAuthenticated(false);
       setAdmin(null);
+      setSelectedSeasonId(null);
+      setSeasonDraft(getDefaultSeasonId());
+      setPlayers([]);
+      setStats(null);
       toast.success('Dalja u krye me sukses');
     } catch {
       toast.error('Dalja dështoi');
+    }
+  };
+
+  const applySeason = async (seasonId: string) => {
+    const parsed = parseSeasonId(seasonId);
+    if (!parsed) {
+      toast.error(seasonL.toastError);
+      return;
+    }
+    setSeasonSaving(true);
+    setOperationInProgress(true);
+    try {
+      const res = await fetch('/api/auth/season', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seasonId: parsed.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || 'season');
+      setSelectedSeasonId(parsed.id);
+      setSeasonDraft(parsed.id);
+      setRegistrationsRefreshToken((n) => n + 1);
+    } catch {
+      toast.error(seasonL.toastError);
+    } finally {
+      setSeasonSaving(false);
+      setOperationInProgress(false);
     }
   };
 
@@ -429,21 +534,24 @@ export default function VolleyballTeamManager() {
   };
 
   useEffect(() => {
-    if (authenticated) {
-      const initFetch = async () => {
-        setLoading(true);
-        await Promise.all([fetchStats(), fetchPlayers()]);
-        setLoading(false);
-      };
-      initFetch();
-    }
-  }, [authenticated]);
+    if (!authenticated || !selectedSeasonId) return;
+    let cancelled = false;
+    const initFetch = async () => {
+      setLoading(true);
+      await Promise.all([fetchStats(), fetchPlayers()]);
+      if (!cancelled) setLoading(false);
+    };
+    void initFetch();
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, selectedSeasonId]);
 
   useEffect(() => {
-    if (authenticated && activeTab === 'players') {
+    if (authenticated && selectedSeasonId && activeTab === 'players') {
       void fetchPlayerAttendanceSummary();
     }
-  }, [authenticated, activeTab]);
+  }, [authenticated, selectedSeasonId, activeTab]);
 
   // Handle photo upload to Cloudinary
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -583,7 +691,7 @@ export default function VolleyballTeamManager() {
   const openWhatsappPaymentReminder = (player: Player) => {
     const digits = normalizePhoneForWhatsApp(player.phone);
     if (!digits) return;
-    const { amountLeft } = getPlayerPaymentSummary(player);
+    const { amountLeft } = paymentSummary(player);
     const amt = formatCurrency(Math.max(0, amountLeft));
     const dueDisplay = formatDueDateForPaymentReminder(defaultPaymentDeadlineIsoYyyyMmDd());
     const msg = buildPaymentReminderMessage(amt, dueDisplay);
@@ -710,7 +818,7 @@ export default function VolleyballTeamManager() {
       toast.success('Pagesa u shtua');
       setAddPaymentPlayer(null);
       setAddPaymentAmount('');
-      setAddPaymentDate(new Date().toISOString().split('T')[0]);
+      setAddPaymentDate(seasonDateKey);
       fetchPlayers();
       fetchStats();
       if (viewingPlayer?.id === addPaymentPlayer.id) setViewingPlayer(data);
@@ -816,9 +924,9 @@ export default function VolleyballTeamManager() {
       phone: '',
       team: '',
       jerseyNumber: '',
-      joinDate: new Date().toISOString().split('T')[0],
+      joinDate: seasonDateKey,
       dateOfBirth: '',
-      contractEndDate: '',
+      contractEndDate: seasonRange?.endKey ?? '',
       active: true,
       totalPayment: '',
     });
@@ -838,9 +946,9 @@ export default function VolleyballTeamManager() {
       phone: registration.phone || '',
       team: '',
       jerseyNumber: '',
-      joinDate: new Date().toISOString().split('T')[0],
+      joinDate: seasonDateKey,
       dateOfBirth: dateInputFromValue(registration.dateOfBirth),
-      contractEndDate: '',
+      contractEndDate: seasonRange?.endKey ?? '',
       active: true,
       totalPayment: '',
     });
@@ -871,26 +979,15 @@ export default function VolleyballTeamManager() {
     setPlayerDialogOpen(true);
   };
 
-  const playerContractYears = useMemo(() => {
-    const years = new Set<string>();
-    for (const p of players || []) {
-      const year = dateKeyFromValue(p.contractEndDate).slice(0, 4);
-      if (/^\d{4}$/.test(year)) years.add(year);
-    }
-    return Array.from(years).sort((a, b) => Number(b) - Number(a));
-  }, [players]);
-
   const playerFilterActiveCount =
     (playerPaymentFilter !== 'all' ? 1 : 0) +
     (playerPaymentSort !== 'none' ? 1 : 0) +
-    (playerStatusFilter !== 'all' ? 1 : 0) +
-    (playerContractYearFilter !== 'all' ? 1 : 0);
+    (playerStatusFilter !== 'all' ? 1 : 0);
 
   const clearPlayerFilters = () => {
     setPlayerPaymentFilter('all');
     setPlayerPaymentSort('none');
     setPlayerStatusFilter('all');
-    setPlayerContractYearFilter('all');
   };
 
   const filteredPlayers = (players || []).filter((player) => {
@@ -901,7 +998,7 @@ export default function VolleyballTeamManager() {
       player?.team?.toLowerCase().includes(searchTerm) ||
       (player?.jerseyNumber != null && String(player.jerseyNumber).includes(playerSearch));
 
-    const { amountLeft } = getPlayerPaymentSummary(player);
+    const { amountLeft } = paymentSummary(player);
     const matchesPaymentFilter =
       playerPaymentFilter === 'all' ||
       (playerPaymentFilter === 'withBalance' && amountLeft > 0) ||
@@ -913,20 +1010,16 @@ export default function VolleyballTeamManager() {
       (playerStatusFilter === 'active' && player.active) ||
       (playerStatusFilter === 'inactive' && !player.active);
 
-    const contractYear = dateKeyFromValue(player.contractEndDate).slice(0, 4);
-    const matchesYearFilter =
-      playerContractYearFilter === 'all' || contractYear === playerContractYearFilter;
-
-    return matchesSearch && matchesPaymentFilter && matchesStatusFilter && matchesYearFilter;
+    return matchesSearch && matchesPaymentFilter && matchesStatusFilter;
   });
 
   const sortedPlayers = [...filteredPlayers].sort((a, b) => {
     if (playerPaymentSort === 'highestBalance') {
-      return getPlayerPaymentSummary(b).amountLeft - getPlayerPaymentSummary(a).amountLeft;
+      return paymentSummary(b).amountLeft - paymentSummary(a).amountLeft;
     }
 
     if (playerPaymentSort === 'lowestBalance') {
-      return getPlayerPaymentSummary(a).amountLeft - getPlayerPaymentSummary(b).amountLeft;
+      return paymentSummary(a).amountLeft - paymentSummary(b).amountLeft;
     }
 
     return 0;
@@ -935,7 +1028,7 @@ export default function VolleyballTeamManager() {
   const sortedPlayerIdsKey = sortedPlayers.map((p) => p.id).join(',');
 
   const goToPlayersRowFromUnpaid = (player: Player) => {
-    const { amountLeft } = getPlayerPaymentSummary(player);
+    const { amountLeft } = paymentSummary(player);
     const wouldHidePayment =
       (playerPaymentFilter === 'paid' && amountLeft !== 0) ||
       (playerPaymentFilter === 'credit' && amountLeft >= 0) ||
@@ -943,10 +1036,6 @@ export default function VolleyballTeamManager() {
     if (wouldHidePayment) setPlayerPaymentFilter('all');
     if (playerStatusFilter === 'active' && !player.active) setPlayerStatusFilter('all');
     if (playerStatusFilter === 'inactive' && player.active) setPlayerStatusFilter('all');
-    const year = dateKeyFromValue(player.contractEndDate).slice(0, 4);
-    if (playerContractYearFilter !== 'all' && year !== playerContractYearFilter) {
-      setPlayerContractYearFilter('all');
-    }
     setPlayerSearch('');
     setDashboardListModal(null);
     setDashboardListSearch('');
@@ -986,7 +1075,7 @@ export default function VolleyballTeamManager() {
       window.history.replaceState(null, '', `#player-row-${id}`);
     }, 50);
     return () => window.clearTimeout(t);
-  }, [activeTab, playerRowSpotlightId, sortedPlayerIdsKey, playerSearch, playerPaymentFilter, playerStatusFilter, playerContractYearFilter]);
+  }, [activeTab, playerRowSpotlightId, sortedPlayerIdsKey, playerSearch, playerPaymentFilter, playerStatusFilter]);
 
   const openDashboardListModal = (kind: 'recentPayments' | 'unpaid') => {
     setDashboardListSearch('');
@@ -1006,7 +1095,7 @@ export default function VolleyballTeamManager() {
 
   const resetNewMatchForm = () => {
     setNewMatchOpponent('');
-    setNewMatchDate(new Date().toISOString().split('T')[0]);
+    setNewMatchDate(seasonDateKey);
     setNewMatchVenue('');
     setNewMatchIsHome(true);
     setNewMatchNotes('');
@@ -1015,7 +1104,7 @@ export default function VolleyballTeamManager() {
 
   const resetCreateAttendanceForm = () => {
     setCreateAttendanceTeam(TEAMS[0]);
-    setCreateAttendanceDate(new Date().toISOString().split('T')[0]);
+    setCreateAttendanceDate(seasonDateKey);
     setCreateAttendanceTime(tiraneTimeHmNow());
   };
 
@@ -1097,6 +1186,11 @@ export default function VolleyballTeamManager() {
       setTeamsMatchesLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!teamsMatchesTeam || !selectedSeasonId) return;
+    void reloadTeamsMatches();
+  }, [selectedSeasonId]);
 
   const submitAddMatchModal = async () => {
     if (!addMatchOurTeam || !newMatchOpponent.trim()) return;
@@ -1233,7 +1327,7 @@ export default function VolleyballTeamManager() {
     return list.filter((player) => {
       const name = player.name.toLowerCase();
       const team = (player.team || '').toLowerCase();
-      const { amountLeft } = getPlayerPaymentSummary(player);
+      const { amountLeft } = paymentSummary(player);
       const left = Math.max(0, amountLeft);
       const amtStr = formatCurrency(left).toLowerCase();
       const qCompact = q.replace(/\s/g, '');
@@ -1389,6 +1483,64 @@ export default function VolleyballTeamManager() {
     );
   }
 
+  if (!selectedSeasonId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100 dark:from-gray-900 dark:to-gray-800 p-4">
+        {(seasonSaving || operationInProgress) && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-background/80 backdrop-blur-sm" aria-hidden="true">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
+              <p className="text-lg font-medium text-foreground">Po ngarkohet...</p>
+            </div>
+          </div>
+        )}
+        <div className="absolute top-4 right-4">
+          <ThemeToggle />
+        </div>
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 w-16 h-16 rounded-full overflow-hidden flex items-center justify-center bg-white ring-2 ring-gray-200 dark:ring-gray-600">
+              <img src="/logo-club-albania.png" alt="Club Albania" className="w-full h-full object-contain" />
+            </div>
+            <CardTitle className="text-2xl">{seasonL.pickerTitle}</CardTitle>
+            <CardDescription>{seasonL.pickerDescription}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="season-picker">{seasonL.pickerLabel}</Label>
+              <Select value={seasonDraft} onValueChange={setSeasonDraft}>
+                <SelectTrigger id="season-picker" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {seasonOptions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {formatSeasonLabel(s.id)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button className="w-full" disabled={seasonSaving} onClick={() => void applySeason(seasonDraft)}>
+              {seasonSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {seasonL.pickerConfirm}
+                </>
+              ) : (
+                seasonL.pickerConfirm
+              )}
+            </Button>
+            <Button variant="outline" className="w-full" onClick={() => void handleLogout()}>
+              <LogOut className="w-4 h-4 mr-2" />
+              Dil
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -1425,6 +1577,23 @@ export default function VolleyballTeamManager() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <Select
+                value={selectedSeasonId}
+                onValueChange={(id) => {
+                  if (id && id !== selectedSeasonId) void applySeason(id);
+                }}
+              >
+                <SelectTrigger className="h-9 w-[8.5rem] sm:w-[10.5rem]" aria-label={seasonL.headerLabel}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {seasonOptions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {formatSeasonLabel(s.id)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <ThemeToggle />
               <Button
                 type="button"
@@ -1878,22 +2047,6 @@ export default function VolleyballTeamManager() {
                             </Select>
                           </div>
                           <div className="space-y-1.5">
-                            <Label htmlFor="player-filter-year">{pl.filterYear}</Label>
-                            <Select value={playerContractYearFilter} onValueChange={setPlayerContractYearFilter}>
-                              <SelectTrigger id="player-filter-year" className="w-full">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent className="z-[60]">
-                                <SelectItem value="all">{pl.filterYearAll}</SelectItem>
-                                {playerContractYears.map((year) => (
-                                  <SelectItem key={year} value={year}>
-                                    {year}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-1.5">
                             <Label htmlFor="player-filter-payment">{pl.filterPayment}</Label>
                             <Select value={playerPaymentFilter} onValueChange={setPlayerPaymentFilter}>
                               <SelectTrigger id="player-filter-payment" className="w-full">
@@ -1987,7 +2140,7 @@ export default function VolleyballTeamManager() {
                                 {player.phone && <p>📞 {player.phone}</p>}
                               </div>
                               {(() => {
-                                const { totalBills, amountPaid, amountLeft } = getPlayerPaymentSummary(player);
+                                const { totalBills, amountPaid, amountLeft } = paymentSummary(player);
                                 const isOverpaid = amountLeft < 0;
                                 return (
                                   <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 text-xs space-y-0.5">
@@ -2011,13 +2164,13 @@ export default function VolleyballTeamManager() {
                           </div>
                           <div className="flex flex-wrap justify-end gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
                             {(() => {
-                              const { amountLeft } = getPlayerPaymentSummary(player);
+                              const { amountLeft } = paymentSummary(player);
                               return (
                                 <Button
                                   size="sm"
                                   disabled={amountLeft <= 0}
                                   className="bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-100"
-                                  onClick={() => { setAddPaymentPlayer(player); setAddPaymentAmount(''); setAddPaymentDate(new Date().toISOString().split('T')[0]); }}
+                                  onClick={() => { setAddPaymentPlayer(player); setAddPaymentAmount(''); setAddPaymentDate(seasonDateKey); }}
                                 >
                                   SHTO PAGESE
                                 </Button>
@@ -2103,7 +2256,7 @@ export default function VolleyballTeamManager() {
                             </TableCell>
                             <TableCell>
                               {(() => {
-                                const { totalBills, amountPaid, amountLeft } = getPlayerPaymentSummary(player);
+                                const { totalBills, amountPaid, amountLeft } = paymentSummary(player);
                                 const isOverpaid = amountLeft < 0;
                                 return (
                                   <div className="text-sm min-w-[140px]">
@@ -2132,13 +2285,13 @@ export default function VolleyballTeamManager() {
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-2">
                                 {(() => {
-                                  const { amountLeft } = getPlayerPaymentSummary(player);
+                                  const { amountLeft } = paymentSummary(player);
                                   return (
                                     <Button
                                       size="sm"
                                       disabled={amountLeft <= 0}
                                       className="bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-100"
-                                      onClick={() => { setAddPaymentPlayer(player); setAddPaymentAmount(''); setAddPaymentDate(new Date().toISOString().split('T')[0]); }}
+                                      onClick={() => { setAddPaymentPlayer(player); setAddPaymentAmount(''); setAddPaymentDate(seasonDateKey); }}
                                       title="Shto pagesë"
                                     >
                                       SHTO PAGESE
@@ -2209,6 +2362,7 @@ export default function VolleyballTeamManager() {
             <RegistrationsTab
               active={activeTab === 'registrations'}
               refreshToken={registrationsRefreshToken}
+              seasonId={selectedSeasonId}
               onCreateFromRegistration={openCreateFromRegistration}
             />
           </TabsContent>
@@ -2289,6 +2443,8 @@ export default function VolleyballTeamManager() {
               setOperationInProgress={setOperationInProgress}
               flowBootstrap={attendanceFlowBootstrap}
               onFlowBootstrapConsumed={consumeAttendanceFlowBootstrap}
+              seasonId={selectedSeasonId}
+              defaultDateKey={seasonDateKey}
             />
           </TabsContent>
         </Tabs>
@@ -2829,7 +2985,7 @@ export default function VolleyballTeamManager() {
               return (
                 <ul className="space-y-2">
                   {dashboardFilteredUnpaid.map((player, i) => {
-                    const { amountLeft } = getPlayerPaymentSummary(player);
+                    const { amountLeft } = paymentSummary(player);
                     const left = Math.max(0, amountLeft);
                     return (
                       <li
@@ -3155,7 +3311,7 @@ export default function VolleyballTeamManager() {
               />
 
               {(() => {
-                const { totalBills, amountPaid, amountLeft } = getPlayerPaymentSummary(viewingPlayer);
+                const { totalBills, amountPaid, amountLeft } = paymentSummary(viewingPlayer);
                 const isOverpaid = amountLeft < 0;
                 return (
                   <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg space-y-2">
@@ -3182,7 +3338,7 @@ export default function VolleyballTeamManager() {
                       <Button
                         size="sm"
                         className="w-full mt-2 bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-100"
-                        onClick={() => { setViewingPlayer(null); setAddPaymentPlayer(viewingPlayer); setAddPaymentAmount(''); setAddPaymentDate(new Date().toISOString().split('T')[0]); }}
+                        onClick={() => { setViewingPlayer(null); setAddPaymentPlayer(viewingPlayer); setAddPaymentAmount(''); setAddPaymentDate(seasonDateKey); }}
                       >
                         SHTO PAGESE
                       </Button>
@@ -3229,6 +3385,7 @@ export default function VolleyballTeamManager() {
                   <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
                     {[...viewingPlayer.paymentHistory]
                       .map((entry, originalIndex) => ({ ...entry, _index: originalIndex }))
+                      .filter((entry) => !seasonRange || isDateKeyInSeason(entry.date, seasonRange))
                       .sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
                       .map((entry) => (
                         <div key={`${entry.date}-${entry.amount}-${entry._index}`} className="flex items-center justify-between gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded">
@@ -3273,7 +3430,7 @@ export default function VolleyballTeamManager() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!addPaymentPlayer} onOpenChange={(open) => { if (!open) { setAddPaymentPlayer(null); setAddPaymentAmount(''); setAddPaymentDate(new Date().toISOString().split('T')[0]); } }}>
+      <Dialog open={!!addPaymentPlayer} onOpenChange={(open) => { if (!open) { setAddPaymentPlayer(null); setAddPaymentAmount(''); setAddPaymentDate(seasonDateKey); } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Shto pagesë</DialogTitle>
@@ -3315,7 +3472,7 @@ export default function VolleyballTeamManager() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setAddPaymentPlayer(null); setAddPaymentAmount(''); setAddPaymentDate(new Date().toISOString().split('T')[0]); }}>
+            <Button variant="outline" onClick={() => { setAddPaymentPlayer(null); setAddPaymentAmount(''); setAddPaymentDate(seasonDateKey); }}>
               Anulo
             </Button>
             <Button onClick={handleAddPayment} disabled={!addPaymentAmount.trim() || !addPaymentDate.trim()}>

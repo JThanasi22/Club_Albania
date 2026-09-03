@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { buildPlayerPaymentPdfBytes, slugifyForFilename } from '@/lib/playerPaymentPdf';
+import { filterPaymentHistoryBySeason } from '@/lib/season';
+import { getSeasonRangeFromCookies } from '@/lib/seasonCookie';
 
 type PaymentEntry = { amount: number; date: string };
 
@@ -18,6 +20,7 @@ export async function GET(
       return NextResponse.json({ error: 'Lojtari nuk u gjet' }, { status: 404 });
     }
 
+    const season = await getSeasonRangeFromCookies();
     const bytes = await buildPlayerPaymentPdfBytes({
       name: player.name,
       team: player.team,
@@ -29,7 +32,10 @@ export async function GET(
       active: player.active,
       photo: player.photo,
       totalPayment: player.totalPayment,
-      paymentHistory: (player.paymentHistory as PaymentEntry[] | null) ?? [],
+      paymentHistory: filterPaymentHistoryBySeason(
+        (player.paymentHistory as PaymentEntry[] | null) ?? [],
+        season,
+      ),
     });
 
     const base = slugifyForFilename(player.name);

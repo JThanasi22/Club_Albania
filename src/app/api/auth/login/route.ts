@@ -28,8 +28,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Kredencialet janë të gabuara' }, { status: 401 });
     }
 
-    // Set session cookie
     const cookieStore = await cookies();
+    cookieStore.delete('admin-season');
     cookieStore.set('admin-session', JSON.stringify({
       id: admin.id,
       username: admin.username,

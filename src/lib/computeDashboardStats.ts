@@ -1,4 +1,9 @@
 import { db } from '@/lib/db';
+import {
+  filterPaymentHistoryBySeason,
+  seasonUtcBounds,
+  type SeasonRange,
+} from '@/lib/season';
 
 type PaymentEntry = { amount: number; date: string };
 
@@ -59,10 +64,11 @@ export type DashboardStatsPayload = {
   }[];
 };
 
-export async function computeDashboardStats(): Promise<DashboardStatsPayload> {
+export async function computeDashboardStats(season: SeasonRange): Promise<DashboardStatsPayload> {
   const currentDate = new Date();
   const currentMonth = currentDate.getMonth() + 1;
   const currentYear = currentDate.getFullYear();
+  const matchBounds = seasonUtcBounds(season);
 
   const [players, teamMatchRows] = await Promise.all([
     db.player.findMany({
@@ -76,6 +82,9 @@ export async function computeDashboardStats(): Promise<DashboardStatsPayload> {
       },
     }),
     db.teamMatch.findMany({
+      where: {
+        matchDate: { gte: matchBounds.gte, lt: matchBounds.lt },
+      },
       select: {
         id: true,
         teamName: true,
@@ -108,7 +117,10 @@ export async function computeDashboardStats(): Promise<DashboardStatsPayload> {
 
   for (const p of players) {
     const total = Number(p.totalPayment) || 0;
-    const history = (p.paymentHistory as PaymentEntry[] | null) ?? [];
+    const history = filterPaymentHistoryBySeason(
+      (p.paymentHistory as PaymentEntry[] | null) ?? [],
+      season,
+    );
     const paid = sumPaymentHistory(history);
     totalExpected += total;
     amountCollectedAllTime += paid;

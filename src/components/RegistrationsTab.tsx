@@ -16,6 +16,7 @@ import type { Registration } from '@/lib/registrations';
 type RegistrationsTabProps = {
   active: boolean;
   refreshToken: number;
+  seasonId: string;
   onCreateFromRegistration: (registration: Registration) => void;
 };
 
@@ -47,7 +48,7 @@ function avatar(name: string, photo: string | null) {
   );
 }
 
-export function RegistrationsTab({ active, refreshToken, onCreateFromRegistration }: RegistrationsTabProps) {
+export function RegistrationsTab({ active, refreshToken, seasonId, onCreateFromRegistration }: RegistrationsTabProps) {
   const [rows, setRows] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -96,7 +97,7 @@ export function RegistrationsTab({ active, refreshToken, onCreateFromRegistratio
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [active, refreshToken]);
+  }, [active, refreshToken, seasonId]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();

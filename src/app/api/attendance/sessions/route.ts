@@ -8,12 +8,17 @@ import {
   type AttendanceRecord,
 } from '@/lib/attendance';
 import { mapAttendanceSession, sortAttendanceSessions } from '@/lib/attendanceSession';
+import { getSeasonRangeFromCookies } from '@/lib/seasonCookie';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    const season = await getSeasonRangeFromCookies();
     const rows = await db.practiceAttendance.findMany({
+      where: {
+        dateKey: { gte: season.startKey, lte: season.endKey },
+      },
       orderBy: [{ teamName: 'asc' }, { sessionDate: 'desc' }],
     });
     return NextResponse.json(sortAttendanceSessions(rows.map(mapAttendanceSession)));

@@ -5,9 +5,11 @@ import { computeDashboardStats } from '@/lib/computeDashboardStats';
 import { getPlayerPaymentSummary, type PaymentEntry } from '@/lib/playerPaymentSummary';
 import type { AdminChatArtifact } from '@/lib/adminAssistantArtifacts';
 import { mergeArtifactsUnique } from '@/lib/adminAssistantArtifacts';
+import { filterPaymentHistoryBySeason, seasonPaymentWhere, type SeasonRange } from '@/lib/season';
 
 export type ToolContext = {
   artifacts: AdminChatArtifact[];
+  season: SeasonRange;
 };
 
 const MAX_INVOICES_LIST = 300;
@@ -18,7 +20,7 @@ export function getAdminAssistantToolDeclarations(): FunctionDeclaration[] {
     {
       name: 'get_dashboard_stats',
       description:
-        'Returns club-wide stats: player counts, total expected vs collected, collection rates, recent paymentHistory entries, and players who still owe (unpaid balance). Use for overview questions.',
+        'Returns club-wide stats: player counts, total expected vs collected, collection rates, recent paymentHistory entries, and players who still owe (unpaid balance). All figures are for the currently selected season. Use for overview questions.',
       parameters: {
         type: SchemaType.OBJECT,
         properties: {},
@@ -27,7 +29,7 @@ export function getAdminAssistantToolDeclarations(): FunctionDeclaration[] {
     {
       name: 'list_players',
       description:
-        'Lists players with id, name, team, active flag, contract total (totalPayment), paid from paymentHistory, and balance left. Optional text search on name and filter by team or activeOnly.',
+        'Lists players with id, name, team, active flag, contract total (totalPayment), paid from paymentHistory in the selected season, and balance left. Optional text search on name and filter by team or activeOnly.',
       parameters: {
         type: SchemaType.OBJECT,
         properties: {
@@ -72,7 +74,7 @@ export function getAdminAssistantToolDeclarations(): FunctionDeclaration[] {
     {
       name: 'query_invoices',
       description:
-        'Query billing invoices (Payment model): filter by player_id, status (paid/pending/overdue), calendar month/year. Returns rows with player name, amounts, due dates.',
+        'Query billing invoices (Payment model) in the selected season: filter by player_id, status (paid/pending/overdue), calendar month/year. Returns rows with player name, amounts, due dates.',
       parameters: {
         type: SchemaType.OBJECT,
         properties: {
@@ -125,8 +127,8 @@ export async function executeAdminAssistantTool(
 ): Promise<Record<string, unknown>> {
   switch (name) {
     case 'get_dashboard_stats': {
-      const stats = await computeDashboardStats();
-      return { stats };
+      const stats = await computeDashboardStats(ctx.season);
+      return { stats, season: ctx.season.id };
     }
     case 'list_players': {
       const searchName = typeof rawArgs.search_name === 'string' ? rawArgs.search_name.trim() : '';
@@ -158,7 +160,10 @@ export async function executeAdminAssistantTool(
       const players = rows.map((p) => {
         const summary = getPlayerPaymentSummary({
           totalPayment: p.totalPayment,
-          paymentHistory: (p.paymentHistory as PaymentEntry[] | null) ?? [],
+          paymentHistory: filterPaymentHistoryBySeason(
+            (p.paymentHistory as PaymentEntry[] | null) ?? [],
+            ctx.season,
+          ),
         });
         return {
           id: p.id,
@@ -179,13 +184,17 @@ export async function executeAdminAssistantTool(
         where: { id: playerId },
         include: {
           payments: {
+            where: seasonPaymentWhere(ctx.season),
             orderBy: [{ year: 'desc' }, { month: 'desc' }],
             take: MAX_PLAYER_INVOICES,
           },
         },
       });
       if (!player) return { error: 'player_not_found', player_id: playerId };
-      const history = (player.paymentHistory as PaymentEntry[] | null) ?? [];
+      const history = filterPaymentHistoryBySeason(
+        (player.paymentHistory as PaymentEntry[] | null) ?? [],
+        ctx.season,
+      );
       const summary = getPlayerPaymentSummary({
         totalPayment: player.totalPayment,
         paymentHistory: history,
@@ -231,7 +240,7 @@ export async function executeAdminAssistantTool(
       const status = typeof rawArgs.status === 'string' ? rawArgs.status.trim() : '';
       const limit = clampInt(rawArgs.limit, 80, 1, MAX_INVOICES_LIST);
 
-      const where: Prisma.PaymentWhereInput = {};
+      const where: Prisma.PaymentWhereInput = { ...seasonPaymentWhere(ctx.season) };
       if (playerId) where.playerId = playerId;
       if (status) where.status = status;
       if (rawArgs.year !== undefined && rawArgs.year !== null && rawArgs.year !== '') {

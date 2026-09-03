@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { randomUUID } from 'crypto';
+import { seasonPaymentWhere } from '@/lib/season';
+import { getSeasonRangeFromCookies } from '@/lib/seasonCookie';
 
 export async function GET(request: Request) {
   try {
@@ -10,12 +12,14 @@ export async function GET(request: Request) {
     const playerId = searchParams.get('playerId');
     const status = searchParams.get('status');
 
+    const season = await getSeasonRangeFromCookies();
     const where: {
       month?: number;
       year?: number;
       playerId?: string;
       status?: string;
-    } = {};
+      OR?: ReturnType<typeof seasonPaymentWhere>['OR'];
+    } = { ...seasonPaymentWhere(season) };
 
     if (month) {
       const m = parseInt(month);

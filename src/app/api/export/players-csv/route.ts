@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAdminSessionFromCookies } from '@/lib/adminSessionCookie';
 import { getPlayerPaymentSummary, type PaymentEntry } from '@/lib/playerPaymentSummary';
+import { filterPaymentHistoryBySeason, seasonPaymentWhere } from '@/lib/season';
+import { getSeasonRangeFromCookies } from '@/lib/seasonCookie';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -18,12 +20,18 @@ export async function GET() {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
 
-    const players = await db.player.findMany({
-      include: {
-        _count: { select: { payments: true } },
-      },
-      orderBy: { name: 'asc' },
-    });
+    const season = await getSeasonRangeFromCookies();
+    const [players, invoiceGroups] = await Promise.all([
+      db.player.findMany({
+        orderBy: { name: 'asc' },
+      }),
+      db.payment.groupBy({
+        by: ['playerId'],
+        where: seasonPaymentWhere(season),
+        _count: { _all: true },
+      }),
+    ]);
+    const invoiceCountByPlayer = new Map(invoiceGroups.map((g) => [g.playerId, g._count._all]));
 
     const headers = [
       'player_id',
@@ -45,7 +53,10 @@ export async function GET() {
     const lines = [headers.map(csvEscape).join(',')];
 
     for (const p of players) {
-      const history = (p.paymentHistory as PaymentEntry[] | null) ?? [];
+      const history = filterPaymentHistoryBySeason(
+        (p.paymentHistory as PaymentEntry[] | null) ?? [],
+        season,
+      );
       const summary = getPlayerPaymentSummary({
         totalPayment: p.totalPayment,
         paymentHistory: history,
@@ -67,7 +78,7 @@ export async function GET() {
         String(summary.totalBills),
         String(summary.amountPaid),
         String(summary.amountLeft),
-        String(p._count.payments),
+        String(invoiceCountByPlayer.get(p.id) ?? 0),
         lastDate,
       ].map((c) => csvEscape(String(c)));
       lines.push(row.join(','));
