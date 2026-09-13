@@ -10,6 +10,13 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -21,7 +28,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Users, TrendingUp, Calendar, Plus, Pencil, Trash2,
   CheckCircle, UserPlus, CreditCard, Search, Wallet,
-  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, FileDown, MessageCircle, LayoutGrid, Image as ImageIcon, ChevronLeft, ChevronRight, ClipboardCheck, ListFilter, ClipboardList
+  Volleyball, Eye, LogOut, Lock, Loader2, Camera, X, FileDown, MessageCircle, LayoutGrid, Image as ImageIcon, ChevronLeft, ChevronRight, ChevronDown, ClipboardCheck, ListFilter, ClipboardList
 } from 'lucide-react';
 import { format, parse } from 'date-fns';
 import { sq as dateFnsSq } from 'date-fns/locale/sq';
@@ -167,6 +174,51 @@ const attendanceL = getAttendanceLang('sq');
 const pl = getPlayersLang('sq');
 const seasonL = getSeasonLang('sq');
 const regL = getRegistrationsLang('sq');
+
+function PlayerStatusDropdown({
+  player,
+  disabled,
+  onStatusChange,
+}: {
+  player: Player;
+  disabled: boolean;
+  onStatusChange: (player: Player, active: boolean) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Badge
+          asChild
+          variant={player.active ? 'default' : 'secondary'}
+          className="cursor-pointer pr-1.5 hover:opacity-90 data-[state=open]:ring-2 data-[state=open]:ring-ring/50"
+        >
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label={pl.changeStatus}
+            className="disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {player.active ? pl.filterStatusActive : pl.filterStatusInactive}
+            <ChevronDown className="size-3 opacity-70" />
+          </button>
+        </Badge>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-36">
+        <DropdownMenuRadioGroup
+          value={player.active ? 'active' : 'inactive'}
+          onValueChange={(next) => {
+            const nextActive = next === 'active';
+            if (nextActive === player.active) return;
+            onStatusChange(player, nextActive);
+          }}
+        >
+          <DropdownMenuRadioItem value="active">{pl.filterStatusActive}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="inactive">{pl.filterStatusInactive}</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 // Format currency in ALL (Albanian Lek)
 const formatCurrency = (amount: number) => {
@@ -756,6 +808,32 @@ export default function VolleyballTeamManager() {
       refreshAllData();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Shtimi i lojtarit dështoi');
+    } finally {
+      setOperationInProgress(false);
+    }
+  };
+
+  const handlePlayerStatusChange = async (player: Player, active: boolean) => {
+    if (player.active === active) return;
+    setOperationInProgress(true);
+    try {
+      const res = await fetch(`/api/players/${player.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || pl.statusUpdateFailed);
+      }
+      setPlayers((prev) => prev.map((item) => (item.id === player.id ? { ...item, active } : item)));
+      if (viewingPlayer?.id === player.id) {
+        setViewingPlayer({ ...viewingPlayer, active });
+      }
+      toast.success(pl.statusUpdated);
+      fetchStats();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : pl.statusUpdateFailed);
     } finally {
       setOperationInProgress(false);
     }
@@ -2126,9 +2204,13 @@ export default function VolleyballTeamManager() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between">
                                 <h3 className="font-semibold text-gray-900 dark:text-white truncate">{player.name}</h3>
-                                <Badge variant={player.active ? 'default' : 'secondary'} className="ml-2">
-                                  {player.active ? 'Aktiv' : 'Joaktiv'}
-                                </Badge>
+                                <div className="ml-2 shrink-0">
+                                  <PlayerStatusDropdown
+                                    player={player}
+                                    disabled={operationInProgress}
+                                    onStatusChange={handlePlayerStatusChange}
+                                  />
+                                </div>
                               </div>
                               <div className="mt-1 text-sm text-gray-500 space-y-1">
                                 {player.team && <p>📍 {player.team}</p>}
@@ -2278,9 +2360,11 @@ export default function VolleyballTeamManager() {
                               })()}
                             </TableCell>
                             <TableCell>
-                              <Badge variant={player.active ? 'default' : 'secondary'}>
-                                {player.active ? 'Aktiv' : 'Joaktiv'}
-                              </Badge>
+                              <PlayerStatusDropdown
+                                player={player}
+                                disabled={operationInProgress}
+                                onStatusChange={handlePlayerStatusChange}
+                              />
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-2">
