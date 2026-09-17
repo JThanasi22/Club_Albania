@@ -508,6 +508,38 @@ export async function buildPlayerPaymentPdfBytes(input: PlayerPaymentPdfInput): 
     page.drawImage(stampPng, { x: stampX, y: stampY, width: sw, height: sh });
   }
 
+  // Bank details box, right-aligned beside the thank-you text and stamp
+  const bankTitle = 'T\xEB dh\xEBnat bankare p\xEBr pages\xEB';
+  const bankLines = [
+    { text: 'Banka Komb\xEBtare Tregtare - BKT', f: fontBold },
+    { text: 'Federata Shqiptare e Volejbollit', f: font },
+    { text: 'Nr. Llogarie. 402030841', f: font },
+    { text: 'IBAN: AL1320511021030841CLOTCLALLA', f: font },
+    { text: 'P\xEBrshkrimi: Em\xEBr Mbiem\xEBr i lojtares', f: fontBoldItalic },
+  ];
+  const bankPad = 12;
+  const bankBoxW =
+    Math.max(fontBold.widthOfTextAtSize(bankTitle, 9), ...bankLines.map((l) => l.f.widthOfTextAtSize(l.text, 9))) +
+    bankPad * 2;
+  const bankBoxH = 32 + bankLines.length * 14;
+  const bankX = pageWidth - margin - bankBoxW;
+  page.drawRectangle({
+    x: bankX,
+    y: y - bankBoxH,
+    width: bankBoxW,
+    height: bankBoxH,
+    color: rgb(0.99, 0.99, 0.99),
+    borderColor: LIGHT_BORDER,
+    borderWidth: 1,
+  });
+  let by = y - 19;
+  page.drawText(bankTitle, { x: bankX + bankPad, y: by, size: 9, font: fontBold, color: rgb(0.35, 0.35, 0.35) });
+  by -= 16;
+  for (const line of bankLines) {
+    page.drawText(line.text, { x: bankX + bankPad, y: by, size: 9, font: line.f, color: rgb(0.1, 0.1, 0.1) });
+    by -= 14;
+  }
+
   page.drawText(`Gjeneruar m\xEB: ${formatDisplayDate(new Date().toISOString())}`, {
     x: margin,
     y: Math.max(STAMP_BOTTOM_MIN, stampY - 16),
