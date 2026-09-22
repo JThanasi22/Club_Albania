@@ -1,4 +1,4 @@
-export const CLUB_TEAMS = ['U20', 'U18', 'U16', 'U14', 'U10'] as const;
+export const CLUB_TEAMS = ['U20', 'U18', 'U16', 'U14', 'U12', 'U10'] as const;
 
 export type ClubTeam = (typeof CLUB_TEAMS)[number];
 

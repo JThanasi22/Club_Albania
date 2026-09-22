@@ -15,7 +15,7 @@ model Player {
   name            String
   email           String?
   phone           String?
-  team            String?   // e.g., "U20", "U18", "U16", "U14", "U10"
+  team            String?   // e.g., "U20", "U18", "U16", "U14", "U12", "U10"
   jerseyNumber    Int?
   photo           String?   // Cloudinary URL
   joinDate        DateTime  @default(now())

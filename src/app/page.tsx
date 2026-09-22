@@ -154,7 +154,7 @@ const MONTHS = [
 ];
 
 const TEAMS = [
-  'U20', 'U18', 'U16', 'U14', 'U10'
+  'U20', 'U18', 'U16', 'U14', 'U12', 'U10'
 ];
 
 function tiraneTimeHmNow(): string {
