@@ -1,10 +1,38 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { parseContractEndDateInput } from '@/lib/contractEndDate';
+import { resolvePlayerTeam, teamForDateOfBirth } from '@/lib/ageGroups';
+
+// Moves automatic teams to the current season's age group and classifies players not yet checked.
+async function syncAutoTeams() {
+  const players = await db.player.findMany({
+    select: { id: true, team: true, teamAuto: true, dateOfBirth: true },
+  });
+  const updates: Promise<unknown>[] = [];
+  for (const p of players) {
+    if (!p.dateOfBirth || p.teamAuto === false) continue;
+    const computed = teamForDateOfBirth(p.dateOfBirth);
+    if (p.teamAuto === true) {
+      if (computed && computed !== p.team) {
+        updates.push(db.player.update({ where: { id: p.id }, data: { team: computed } }));
+      }
+      continue;
+    }
+    const resolved = resolvePlayerTeam(p.team, p.dateOfBirth);
+    if (!p.team && !resolved.team) continue; // outside all age groups; check again next time
+    updates.push(db.player.update({ where: { id: p.id }, data: resolved }));
+  }
+  if (updates.length) await Promise.all(updates);
+}
 
 // GET all players
 export async function GET() {
   try {
+    try {
+      await syncAutoTeams();
+    } catch (error) {
+      console.error('Error syncing player teams:', error);
+    }
     const players = await db.player.findMany({
       include: {
         payments: true,
@@ -51,17 +79,20 @@ export async function POST(request: Request) {
     }
 
     const total = totalPayment != null ? Number(totalPayment) : 0;
+    const parsedDateOfBirth =
+      dateOfBirth != null && String(dateOfBirth).trim() !== '' ? new Date(dateOfBirth) : null;
+    const resolvedTeam = resolvePlayerTeam(team, parsedDateOfBirth);
     const player = await db.player.create({
       data: {
         name,
         email: email || null,
         phone: phone || null,
-        team: team || null,
+        team: resolvedTeam.team,
+        teamAuto: resolvedTeam.teamAuto,
         jerseyNumber: jerseyNumber ? parseInt(jerseyNumber) : null,
         photo: photo || null,
         joinDate: joinDate ? new Date(joinDate) : new Date(),
-        dateOfBirth:
-          dateOfBirth != null && String(dateOfBirth).trim() !== '' ? new Date(dateOfBirth) : null,
+        dateOfBirth: parsedDateOfBirth,
         contractEndDate: contractEndParsed.date,
         active: active !== undefined ? active : true,
         totalPayment: Number.isNaN(total) ? 0 : Math.max(0, total),

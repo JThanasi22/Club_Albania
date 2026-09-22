@@ -16,6 +16,7 @@ model Player {
   email           String?
   phone           String?
   team            String?   // e.g., "U20", "U18", "U16", "U14", "U12", "U10"
+  teamAuto        Boolean?  // true = team follows date of birth each season; false = set by hand; null = not yet checked
   jerseyNumber    Int?
   photo           String?   // Cloudinary URL
   joinDate        DateTime  @default(now())

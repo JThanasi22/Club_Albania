@@ -50,6 +50,7 @@ import {
   isDateKeyInSeason,
   parseSeasonId,
 } from '@/lib/season';
+import { teamForDateOfBirth } from '@/lib/ageGroups';
 import { getDashboardLang } from '@/lang/dashboard';
 import { getTeamsLang } from '@/lang/teams';
 import { getAttendanceLang } from '@/lang/attendance';
@@ -1022,7 +1023,7 @@ export default function VolleyballTeamManager() {
       name: registration.name,
       email: registration.email || '',
       phone: registration.phone || '',
-      team: '',
+      team: teamForDateOfBirth(dateInputFromValue(registration.dateOfBirth)) ?? '',
       jerseyNumber: '',
       joinDate: seasonDateKey,
       dateOfBirth: dateInputFromValue(registration.dateOfBirth),
@@ -3284,7 +3285,16 @@ export default function VolleyballTeamManager() {
                   id="dateOfBirth"
                   type="date"
                   value={playerForm.dateOfBirth}
-                  onChange={(e) => setPlayerForm({ ...playerForm, dateOfBirth: e.target.value })}
+                  onChange={(e) => {
+                    const dateOfBirth = e.target.value;
+                    // Follow the birth date unless the team was picked by hand (differs from the previous auto team).
+                    const previousAuto = teamForDateOfBirth(playerForm.dateOfBirth) ?? '';
+                    const followsBirthDate = !playerForm.team || playerForm.team === previousAuto;
+                    const team = followsBirthDate
+                      ? teamForDateOfBirth(dateOfBirth) ?? playerForm.team
+                      : playerForm.team;
+                    setPlayerForm({ ...playerForm, dateOfBirth, team });
+                  }}
                 />
               </div>
               <div className="space-y-2">

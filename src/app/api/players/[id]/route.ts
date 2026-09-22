@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { parseContractEndDateInput } from '@/lib/contractEndDate';
+import { resolvePlayerTeam } from '@/lib/ageGroups';
 
 export async function GET(
   request: Request,
@@ -62,6 +63,16 @@ export async function PUT(
     if (dateOfBirth !== undefined) {
       updateData.dateOfBirth =
         dateOfBirth != null && String(dateOfBirth).trim() !== '' ? new Date(dateOfBirth) : null;
+    }
+    if (team !== undefined || dateOfBirth !== undefined) {
+      // An automatic team that is sent back unchanged stays automatic, so it follows a corrected birth date.
+      const keepsAutoTeam = existing.teamAuto === true && (team === undefined || team === existing.team);
+      const chosenTeam = keepsAutoTeam ? null : team !== undefined ? team : existing.team;
+      const effectiveDateOfBirth =
+        dateOfBirth !== undefined ? (updateData.dateOfBirth as Date | null) : existing.dateOfBirth;
+      const resolved = resolvePlayerTeam(chosenTeam, effectiveDateOfBirth);
+      updateData.team = resolved.team ?? (keepsAutoTeam ? existing.team : null);
+      updateData.teamAuto = resolved.teamAuto;
     }
     if (contractEndDate !== undefined) {
       const contractEndParsed = parseContractEndDateInput(contractEndDate);
