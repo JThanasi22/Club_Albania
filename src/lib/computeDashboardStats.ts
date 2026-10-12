@@ -77,6 +77,7 @@ export async function computeDashboardStats(season: SeasonRange): Promise<Dashbo
         name: true,
         team: true,
         active: true,
+        jerseyNumber: true,
         totalPayment: true,
         paymentHistory: true,
       },
@@ -116,6 +117,7 @@ export async function computeDashboardStats(season: SeasonRange): Promise<Dashbo
   let currentMonthCollected = 0;
 
   for (const p of players) {
+    if (p.jerseyNumber === 1) continue;
     const total = Number(p.totalPayment) || 0;
     const history = filterPaymentHistoryBySeason(
       (p.paymentHistory as PaymentEntry[] | null) ?? [],

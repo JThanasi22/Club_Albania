@@ -1069,9 +1069,15 @@ export default function VolleyballTeamManager() {
     setPlayerStatusFilter('all');
   };
 
+  const revealJerseyOne = playerSearch.trim() === '1';
+
   const filteredPlayers = (players || []).filter((player) => {
+    const isJerseyOne = player?.jerseyNumber === 1;
+    if (isJerseyOne && !revealJerseyOne) return false;
+
     const searchTerm = playerSearch.toLowerCase();
     const matchesSearch =
+      isJerseyOne ||
       player?.name?.toLowerCase().includes(searchTerm) ||
       player?.email?.toLowerCase().includes(searchTerm) ||
       player?.team?.toLowerCase().includes(searchTerm) ||
