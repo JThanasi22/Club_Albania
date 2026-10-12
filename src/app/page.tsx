@@ -298,6 +298,7 @@ export default function VolleyballTeamManager() {
   const [playerPaymentFilter, setPlayerPaymentFilter] = useState('all');
   const [playerPaymentSort, setPlayerPaymentSort] = useState('none');
   const [playerStatusFilter, setPlayerStatusFilter] = useState('all');
+  const [playerTeamFilter, setPlayerTeamFilter] = useState('all');
   const [creatingFromRegistration, setCreatingFromRegistration] = useState<Registration | null>(null);
   const [registrationsRefreshToken, setRegistrationsRefreshToken] = useState(0);
   const [dashboardListModal, setDashboardListModal] = useState<null | 'recentPayments' | 'unpaid'>(null);
@@ -1061,12 +1062,14 @@ export default function VolleyballTeamManager() {
   const playerFilterActiveCount =
     (playerPaymentFilter !== 'all' ? 1 : 0) +
     (playerPaymentSort !== 'none' ? 1 : 0) +
-    (playerStatusFilter !== 'all' ? 1 : 0);
+    (playerStatusFilter !== 'all' ? 1 : 0) +
+    (playerTeamFilter !== 'all' ? 1 : 0);
 
   const clearPlayerFilters = () => {
     setPlayerPaymentFilter('all');
     setPlayerPaymentSort('none');
     setPlayerStatusFilter('all');
+    setPlayerTeamFilter('all');
   };
 
   const revealJerseyOne = playerSearch.trim() === '1';
@@ -1080,7 +1083,6 @@ export default function VolleyballTeamManager() {
       isJerseyOne ||
       player?.name?.toLowerCase().includes(searchTerm) ||
       player?.email?.toLowerCase().includes(searchTerm) ||
-      player?.team?.toLowerCase().includes(searchTerm) ||
       (player?.jerseyNumber != null && String(player.jerseyNumber).includes(playerSearch));
 
     const { amountLeft } = paymentSummary(player);
@@ -1095,7 +1097,10 @@ export default function VolleyballTeamManager() {
       (playerStatusFilter === 'active' && player.active) ||
       (playerStatusFilter === 'inactive' && !player.active);
 
-    return matchesSearch && matchesPaymentFilter && matchesStatusFilter;
+    const matchesTeamFilter =
+      playerTeamFilter === 'all' || (player.team || '').trim() === playerTeamFilter;
+
+    return matchesSearch && matchesPaymentFilter && matchesStatusFilter && matchesTeamFilter;
   });
 
   const sortedPlayers = [...filteredPlayers].sort((a, b) => {
@@ -1121,6 +1126,7 @@ export default function VolleyballTeamManager() {
     if (wouldHidePayment) setPlayerPaymentFilter('all');
     if (playerStatusFilter === 'active' && !player.active) setPlayerStatusFilter('all');
     if (playerStatusFilter === 'inactive' && player.active) setPlayerStatusFilter('all');
+    if (playerTeamFilter !== 'all' && (player.team || '').trim() !== playerTeamFilter) setPlayerTeamFilter('all');
     setPlayerSearch('');
     setDashboardListModal(null);
     setDashboardListSearch('');
@@ -2128,6 +2134,20 @@ export default function VolleyballTeamManager() {
                                 <SelectItem value="all">{pl.filterStatusAll}</SelectItem>
                                 <SelectItem value="active">{pl.filterStatusActive}</SelectItem>
                                 <SelectItem value="inactive">{pl.filterStatusInactive}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="player-filter-team">{pl.filterTeam}</Label>
+                            <Select value={playerTeamFilter} onValueChange={setPlayerTeamFilter}>
+                              <SelectTrigger id="player-filter-team" className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="z-[60]">
+                                <SelectItem value="all">{pl.filterTeamAll}</SelectItem>
+                                {TEAMS.map((team) => (
+                                  <SelectItem key={team} value={team}>{team}</SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                           </div>
