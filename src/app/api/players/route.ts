@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { parseContractEndDateInput } from '@/lib/contractEndDate';
 import { resolvePlayerTeam, teamForDateOfBirth } from '@/lib/ageGroups';
+import { duplicateIdNumberMessage, ensureIdNumberIndex, parseIdNumberInput } from '@/lib/playerIdNumber';
 
 // Moves automatic teams to the current season's age group and classifies players not yet checked.
 async function syncAutoTeams() {
@@ -52,7 +53,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, email, phone, team, jerseyNumber, photo, joinDate, dateOfBirth, contractEndDate, active, totalPayment, registrationId } = body;
+    const { name, email, phone, idNumber, team, jerseyNumber, photo, joinDate, dateOfBirth, contractEndDate, active, totalPayment, registrationId } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Emri është i detyrueshëm' }, { status: 400 });
@@ -79,6 +80,8 @@ export async function POST(request: Request) {
     }
 
     const total = totalPayment != null ? Number(totalPayment) : 0;
+    const parsedIdNumber = parseIdNumberInput(idNumber);
+    if (parsedIdNumber) await ensureIdNumberIndex();
     const parsedDateOfBirth =
       dateOfBirth != null && String(dateOfBirth).trim() !== '' ? new Date(dateOfBirth) : null;
     const resolvedTeam = resolvePlayerTeam(team, parsedDateOfBirth);
@@ -87,6 +90,7 @@ export async function POST(request: Request) {
         name,
         email: email || null,
         phone: phone || null,
+        idNumber: parsedIdNumber,
         team: resolvedTeam.team,
         teamAuto: resolvedTeam.teamAuto,
         jerseyNumber: jerseyNumber ? parseInt(jerseyNumber) : null,
@@ -109,6 +113,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json(player, { status: 201 });
   } catch (error) {
+    const duplicate = duplicateIdNumberMessage(error);
+    if (duplicate) {
+      return NextResponse.json({ error: duplicate }, { status: 409 });
+    }
     console.error('Error creating player:', error);
     return NextResponse.json({ error: 'Krijimi i lojtarit dështoi' }, { status: 500 });
   }

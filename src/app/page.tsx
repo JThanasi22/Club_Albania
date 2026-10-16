@@ -78,6 +78,7 @@ interface Player {
   name: string;
   email: string | null;
   phone: string | null;
+  idNumber?: string | null;
   team: string | null;
   jerseyNumber: number | null;
   photo: string | null;
@@ -379,6 +380,7 @@ export default function VolleyballTeamManager() {
     name: '',
     email: '',
     phone: '',
+    idNumber: '',
     team: '',
     jerseyNumber: '',
     joinDate: new Date().toISOString().split('T')[0],
@@ -1002,6 +1004,7 @@ export default function VolleyballTeamManager() {
       name: '',
       email: '',
       phone: '',
+      idNumber: '',
       team: '',
       jerseyNumber: '',
       joinDate: seasonDateKey,
@@ -1024,6 +1027,7 @@ export default function VolleyballTeamManager() {
       name: registration.name,
       email: registration.email || '',
       phone: registration.phone || '',
+      idNumber: '',
       team: teamForDateOfBirth(dateInputFromValue(registration.dateOfBirth)) ?? '',
       jerseyNumber: '',
       joinDate: seasonDateKey,
@@ -1042,6 +1046,7 @@ export default function VolleyballTeamManager() {
       name: player.name,
       email: player.email || '',
       phone: player.phone || '',
+      idNumber: player.idNumber || '',
       team: player.team || '',
       jerseyNumber: player.jerseyNumber?.toString() || '',
       joinDate: new Date(player.joinDate).toISOString().split('T')[0],
@@ -1083,6 +1088,7 @@ export default function VolleyballTeamManager() {
       isJerseyOne ||
       player?.name?.toLowerCase().includes(searchTerm) ||
       player?.email?.toLowerCase().includes(searchTerm) ||
+      (player?.idNumber?.toLowerCase().includes(searchTerm)) ||
       (player?.jerseyNumber != null && String(player.jerseyNumber).includes(playerSearch));
 
     const { amountLeft } = paymentSummary(player);
@@ -3294,6 +3300,15 @@ export default function VolleyballTeamManager() {
                   placeholder="1-99"
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="idNumber">{pl.idNumberLabel}</Label>
+                <Input
+                  id="idNumber"
+                  value={playerForm.idNumber}
+                  onChange={(e) => setPlayerForm({ ...playerForm, idNumber: e.target.value })}
+                  placeholder={pl.idNumberPlaceholder}
+                />
+              </div>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -3400,6 +3415,10 @@ export default function VolleyballTeamManager() {
                 <div>
                   <Label className="text-gray-500">Telefoni</Label>
                   <p className="font-medium">{viewingPlayer.phone || '-'}</p>
+                </div>
+                <div>
+                  <Label className="text-gray-500">{pl.idNumberLabel}</Label>
+                  <p className="font-medium">{viewingPlayer.idNumber || '-'}</p>
                 </div>
                 <div>
                   <Label className="text-gray-500">Data e Bashkimit</Label>

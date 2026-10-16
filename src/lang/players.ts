@@ -1,4 +1,7 @@
 const sq = {
+  idNumberLabel: 'Numri i ID',
+  idNumberPlaceholder: 'A12345678B',
+  idNumberDuplicate: 'Ky numër ID është tashmë i regjistruar',
   contractEndDateLabel: 'Data e Mbarimit',
   contractEndDateRequired: 'Data e mbarimit është e detyrueshme',
   finalReportButton: 'Te Dhenat Perfundimtare',
@@ -29,6 +32,9 @@ const sq = {
 } as const;
 
 const en = {
+  idNumberLabel: 'ID number',
+  idNumberPlaceholder: 'A12345678B',
+  idNumberDuplicate: 'This ID number is already registered',
   contractEndDateLabel: 'Contract end date',
   contractEndDateRequired: 'Contract end date is required',
   finalReportButton: 'Final report data',

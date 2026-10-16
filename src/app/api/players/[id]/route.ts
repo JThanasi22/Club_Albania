@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { parseContractEndDateInput } from '@/lib/contractEndDate';
 import { resolvePlayerTeam } from '@/lib/ageGroups';
+import { duplicateIdNumberMessage, ensureIdNumberIndex, parseIdNumberInput } from '@/lib/playerIdNumber';
 
 export async function GET(
   request: Request,
@@ -39,7 +40,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, email, phone, team, jerseyNumber, photo, joinDate, dateOfBirth, contractEndDate, active, totalPayment, paymentHistory } = body;
+    const { name, email, phone, idNumber, team, jerseyNumber, photo, joinDate, dateOfBirth, contractEndDate, active, totalPayment, paymentHistory } = body;
 
     const existing = await db.player.findUnique({ where: { id } });
     if (!existing) {
@@ -50,10 +51,14 @@ export async function PUT(
       return NextResponse.json({ error: 'Emri nuk mund të jetë bosh' }, { status: 400 });
     }
 
+    const parsedIdNumber = idNumber !== undefined ? parseIdNumberInput(idNumber) : undefined;
+    if (parsedIdNumber) await ensureIdNumberIndex();
+
     const updateData: Record<string, unknown> = {
       name: name !== undefined ? name.trim() : undefined,
       email: email !== undefined ? (email || null) : undefined,
       phone: phone !== undefined ? (phone || null) : undefined,
+      idNumber: parsedIdNumber,
       team: team !== undefined ? (team || null) : undefined,
       jerseyNumber: jerseyNumber !== undefined ? (jerseyNumber ? parseInt(jerseyNumber) : null) : undefined,
       photo: photo !== undefined ? photo : undefined,
@@ -106,6 +111,10 @@ export async function PUT(
 
     return NextResponse.json(player);
   } catch (error) {
+    const duplicate = duplicateIdNumberMessage(error);
+    if (duplicate) {
+      return NextResponse.json({ error: duplicate }, { status: 409 });
+    }
     console.error('Error updating player:', error);
     return NextResponse.json({ error: 'Përditësimi i lojtarit dështoi' }, { status: 500 });
   }
